@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "657570153805",
+    "project_id": "quit-companion",
+    "storage_bucket": "quit-companion.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:657570153805:android:95c8b8e858e32b4edfe304",
+        "android_client_info": {
+          "package_name": "com.quitcompanion.quit_companion"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "657570153805-n8og9fp8i8p1cnuntp4q3h5crhnbs9j5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.quitcompanion.quit_companion",
+            "certificate_hash": "1edbd2ee86f707c290cf5dae5ab731093f4ba10e"
+          }
+        },
+        {
+          "client_id": "657570153805-glucc4dicclgdlaadddnlbhu7dbgfqde.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA3PKyhOQzNg_UdVo3Bp5l9G0idZDUMqsg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "657570153805-glucc4dicclgdlaadddnlbhu7dbgfqde.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

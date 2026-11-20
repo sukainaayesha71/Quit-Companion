@@ -1,0 +1,22 @@
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+httpx>=0.27,<1.0
+firebase-admin>=6.5,<7.0
+pydantic>=2.7,<3.0
+pydantic-settings>=2.3,<3.0
+
+# Research-preview ModelPredictor only (app/relapse/predictor.py,
+# RELAPSE_PREDICTOR_MODE=model - never the production default). Pinned to
+# EXACT versions, not ranges: joblib-unpickling a scikit-learn estimator is
+# not guaranteed compatible across scikit-learn versions, and these are the
+# exact versions backend/app/relapse/model_artifacts/*.joblib was trained
+# and saved with.
+scikit-learn==1.9.0
+joblib==1.5.3
+numpy==2.5.2
+
+pytest>=8.2,<9.0
+pytest-asyncio>=0.23,<1.0
+
+# Packaged XGBoost ML predictor (version used to train the artifact).
+xgboost==2.1.4

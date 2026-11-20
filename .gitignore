@@ -1,0 +1,40 @@
+# Secrets — never commit
+**/.env
+**/*serviceAccount*.json
+**/*firebase-adminsdk*.json
+
+# Local diagnostics and temporary document-processing dependencies
+*.log
+.tools/pdf-reader/
+.tools/icon-tools/
+
+# Python
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/*.egg-info/
+backend/.venv/
+backend/venv/
+backend/.runtime/
+
+# ML pipeline (backend AI/ML plan, 2026-08-17): raw third-party dataset
+# archives/extracts and trained model artifacts are never committed —
+# see backend/ml/README.md for how to obtain/regenerate them.
+backend/ml/data/
+backend/ml/models/
+backend/ml/outputs/
+backend/data/EMASENS_ML/
+.worktrees/
+**/.claude/settings.local.json
+mobile/flutter_01.png
+
+# Flutter generated files
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+
+# Claude temporary lock files
+**/.claude/*.lock
+

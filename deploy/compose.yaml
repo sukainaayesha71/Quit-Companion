@@ -1,0 +1,41 @@
+services:
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      FIREBASE_SERVICE_ACCOUNT_JSON: /run/secrets/firebase.json
+    volumes:
+      - ${FIREBASE_CREDENTIAL_FILE:?Set the absolute Firebase credential file path}:/run/secrets/firebase.json:ro
+      - ./reviews:/run/reviews:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+  worker:
+    build: ../backend
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    env_file: .env
+    environment:
+      FIREBASE_SERVICE_ACCOUNT_JSON: /run/secrets/firebase.json
+    volumes:
+      - ${FIREBASE_CREDENTIAL_FILE:?Set the absolute Firebase credential file path}:/run/secrets/firebase.json:ro
+      - ./reviews:/run/reviews:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-localhost}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+volumes:
+  caddy_data:

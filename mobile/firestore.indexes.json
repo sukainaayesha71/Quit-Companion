@@ -1,0 +1,23 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {"collectionGroup": "cravingLogs", "fieldPath": "riskAssessmentPending", "indexes": [
+      {"order": "ASCENDING", "queryScope": "COLLECTION"},
+      {"order": "DESCENDING", "queryScope": "COLLECTION"},
+      {"arrayConfig": "CONTAINS", "queryScope": "COLLECTION"},
+      {"order": "ASCENDING", "queryScope": "COLLECTION_GROUP"}
+    ]},
+    {"collectionGroup": "habitAlternativeAttempts", "fieldPath": "outcomeHelped", "indexes": [
+      {"order": "ASCENDING", "queryScope": "COLLECTION"},
+      {"order": "DESCENDING", "queryScope": "COLLECTION"},
+      {"arrayConfig": "CONTAINS", "queryScope": "COLLECTION"},
+      {"order": "ASCENDING", "queryScope": "COLLECTION_GROUP"}
+    ]},
+    {"collectionGroup": "reminderSchedules", "fieldPath": "enabled", "indexes": [
+      {"order": "ASCENDING", "queryScope": "COLLECTION"},
+      {"order": "DESCENDING", "queryScope": "COLLECTION"},
+      {"arrayConfig": "CONTAINS", "queryScope": "COLLECTION"},
+      {"order": "ASCENDING", "queryScope": "COLLECTION_GROUP"}
+    ]}
+  ]
+}

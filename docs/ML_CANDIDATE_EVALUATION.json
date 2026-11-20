@@ -1,0 +1,306 @@
+{
+  "generated_at": "2026-11-17T15:02:11.347923+00:00",
+  "outcome": "lapse at the next observed EMA within the same participant; last EMAs excluded",
+  "dataset": "EMASENS_ML v2.0.0",
+  "selection": "development grouped CV average precision; thresholds from development OOF predictions",
+  "candidates": [
+    {
+      "feature_set": "current_app",
+      "model": "logistic",
+      "columns": [
+        "craving_imp",
+        "happy_imp",
+        "excited_imp",
+        "enthusiastic_imp",
+        "contented_imp",
+        "calm_imp",
+        "irritable_imp",
+        "anxious_imp",
+        "stressed_imp",
+        "sad_imp",
+        "bored_imp"
+      ],
+      "development": {
+        "roc_auc": 0.563233751038698,
+        "average_precision": 0.08600110297823974,
+        "brier_score": 0.06989052332486947,
+        "recall": 0.5616045845272206,
+        "precision": 0.09889001009081735,
+        "high_risk_fraction": 0.4119725628767408,
+        "prevalence": 0.07254209104136354
+      },
+      "fold_roc_auc": [
+        0.6009973686444274,
+        0.6144797879390325,
+        0.5817451648385225
+      ],
+      "thresholds": {
+        "low_threshold": 0.0343,
+        "high_threshold": 0.0686,
+        "method": "high_threshold = Youden's J optimum on ROC curve; low_threshold = 75th percentile of predicted probability among true negatives, capped below high_threshold"
+      }
+    },
+    {
+      "feature_set": "current_app",
+      "model": "random_forest",
+      "columns": [
+        "craving_imp",
+        "happy_imp",
+        "excited_imp",
+        "enthusiastic_imp",
+        "contented_imp",
+        "calm_imp",
+        "irritable_imp",
+        "anxious_imp",
+        "stressed_imp",
+        "sad_imp",
+        "bored_imp"
+      ],
+      "development": {
+        "roc_auc": 0.5977140295831465,
+        "average_precision": 0.10247872895211169,
+        "brier_score": 0.0685533418500789,
+        "recall": 0.5157593123209169,
+        "precision": 0.10067114093959731,
+        "high_risk_fraction": 0.37164830596549575,
+        "prevalence": 0.07254209104136354
+      },
+      "fold_roc_auc": [
+        0.6150920974450386,
+        0.5910069883727935,
+        0.6806845610926089
+      ],
+      "thresholds": {
+        "low_threshold": 0.036,
+        "high_threshold": 0.072,
+        "method": "high_threshold = Youden's J optimum on ROC curve; low_threshold = 75th percentile of predicted probability among true negatives, capped below high_threshold"
+      }
+    },
+    {
+      "feature_set": "current_app",
+      "model": "xgboost",
+      "columns": [
+        "craving_imp",
+        "happy_imp",
+        "excited_imp",
+        "enthusiastic_imp",
+        "contented_imp",
+        "calm_imp",
+        "irritable_imp",
+        "anxious_imp",
+        "stressed_imp",
+        "sad_imp",
+        "bored_imp"
+      ],
+      "development": {
+        "roc_auc": 0.6057426674663731,
+        "average_precision": 0.09967388194305532,
+        "brier_score": 0.06830575917273891,
+        "recall": 0.5472779369627507,
+        "precision": 0.10391730141458107,
+        "high_risk_fraction": 0.3820411556848888,
+        "prevalence": 0.07254209104136354
+      },
+      "fold_roc_auc": [
+        0.6069136745607333,
+        0.6345299415627448,
+        0.672696614623117
+      ],
+      "thresholds": {
+        "low_threshold": 0.0321,
+        "high_threshold": 0.0642,
+        "method": "high_threshold = Youden's J optimum on ROC curve; low_threshold = 75th percentile of predicted probability among true negatives, capped below high_threshold"
+      }
+    },
+    {
+      "feature_set": "extended_app",
+      "model": "logistic",
+      "columns": [
+        "craving_imp",
+        "happy_imp",
+        "excited_imp",
+        "enthusiastic_imp",
+        "contented_imp",
+        "calm_imp",
+        "irritable_imp",
+        "anxious_imp",
+        "stressed_imp",
+        "sad_imp",
+        "bored_imp",
+        "motivation_imp",
+        "confidence_imp",
+        "pain_imp",
+        "cigarette_availability_imp"
+      ],
+      "development": {
+        "roc_auc": 0.7744140587373286,
+        "average_precision": 0.18432655549925578,
+        "brier_score": 0.06633882211619292,
+        "recall": 0.7478510028653295,
+        "precision": 0.15316901408450703,
+        "high_risk_fraction": 0.3541883184369154,
+        "prevalence": 0.07254209104136354
+      },
+      "fold_roc_auc": [
+        0.743379169849758,
+        0.7419083980962708,
+        0.8223593754774055
+      ],
+      "thresholds": {
+        "low_threshold": 0.0273,
+        "high_threshold": 0.0547,
+        "method": "high_threshold = Youden's J optimum on ROC curve; low_threshold = 75th percentile of predicted probability among true negatives, capped below high_threshold"
+      }
+    },
+    {
+      "feature_set": "extended_app",
+      "model": "random_forest",
+      "columns": [
+        "craving_imp",
+        "happy_imp",
+        "excited_imp",
+        "enthusiastic_imp",
+        "contented_imp",
+        "calm_imp",
+        "irritable_imp",
+        "anxious_imp",
+        "stressed_imp",
+        "sad_imp",
+        "bored_imp",
+        "motivation_imp",
+        "confidence_imp",
+        "pain_imp",
+        "cigarette_availability_imp"
+      ],
+      "development": {
+        "roc_auc": 0.7883836638972335,
+        "average_precision": 0.18542014126113193,
+        "brier_score": 0.06548930663066968,
+        "recall": 0.7851002865329513,
+        "precision": 0.16060961313012895,
+        "high_risk_fraction": 0.3546040324256911,
+        "prevalence": 0.07254209104136354
+      },
+      "fold_roc_auc": [
+        0.7415541974365504,
+        0.730936351587445,
+        0.8828218094045037
+      ],
+      "thresholds": {
+        "low_threshold": 0.0314,
+        "high_threshold": 0.0628,
+        "method": "high_threshold = Youden's J optimum on ROC curve; low_threshold = 75th percentile of predicted probability among true negatives, capped below high_threshold"
+      }
+    },
+    {
+      "feature_set": "extended_app",
+      "model": "xgboost",
+      "columns": [
+        "craving_imp",
+        "happy_imp",
+        "excited_imp",
+        "enthusiastic_imp",
+        "contented_imp",
+        "calm_imp",
+        "irritable_imp",
+        "anxious_imp",
+        "stressed_imp",
+        "sad_imp",
+        "bored_imp",
+        "motivation_imp",
+        "confidence_imp",
+        "pain_imp",
+        "cigarette_availability_imp"
+      ],
+      "development": {
+        "roc_auc": 0.7952243009739037,
+        "average_precision": 0.18617996414995314,
+        "brier_score": 0.06901971574479909,
+        "recall": 0.8452722063037249,
+        "precision": 0.15625,
+        "high_risk_fraction": 0.39243400540428186,
+        "prevalence": 0.07254209104136354
+      },
+      "fold_roc_auc": [
+        0.7588702147525677,
+        0.7325893126091934,
+        0.8856289529163739
+      ],
+      "thresholds": {
+        "low_threshold": 0.0217,
+        "high_threshold": 0.0433,
+        "method": "high_threshold = Youden's J optimum on ROC curve; low_threshold = 75th percentile of predicted probability among true negatives, capped below high_threshold"
+      }
+    }
+  ],
+  "selected": {
+    "feature_set": "extended_app",
+    "model": "xgboost",
+    "columns": [
+      "craving_imp",
+      "happy_imp",
+      "excited_imp",
+      "enthusiastic_imp",
+      "contented_imp",
+      "calm_imp",
+      "irritable_imp",
+      "anxious_imp",
+      "stressed_imp",
+      "sad_imp",
+      "bored_imp",
+      "motivation_imp",
+      "confidence_imp",
+      "pain_imp",
+      "cigarette_availability_imp"
+    ],
+    "development": {
+      "roc_auc": 0.7952243009739037,
+      "average_precision": 0.18617996414995314,
+      "brier_score": 0.06901971574479909,
+      "recall": 0.8452722063037249,
+      "precision": 0.15625,
+      "high_risk_fraction": 0.39243400540428186,
+      "prevalence": 0.07254209104136354
+    },
+    "fold_roc_auc": [
+      0.7588702147525677,
+      0.7325893126091934,
+      0.8856289529163739
+    ],
+    "thresholds": {
+      "low_threshold": 0.0217,
+      "high_threshold": 0.0433,
+      "method": "high_threshold = Youden's J optimum on ROC curve; low_threshold = 75th percentile of predicted probability among true negatives, capped below high_threshold"
+    }
+  },
+  "heldout": {
+    "roc_auc": 0.8406166560712015,
+    "average_precision": 0.23089082515618675,
+    "brier_score": 0.04393459111452103,
+    "recall": 0.7230769230769231,
+    "precision": 0.1598639455782313,
+    "high_risk_fraction": 0.23058823529411765,
+    "prevalence": 0.050980392156862744
+  },
+  "heldout_roc_auc_95_percent_participant_bootstrap": [
+    0.6957718612277558,
+    0.9137177964982559
+  ],
+  "dummy_baseline": {
+    "roc_auc": 0.5,
+    "average_precision": 0.050980392156862744,
+    "brier_score": 0.04884629863118111,
+    "recall": 0.0,
+    "precision": 0.0,
+    "high_risk_fraction": 0.0,
+    "prevalence": 0.050980392156862744
+  },
+  "production_approved": false,
+  "remaining_validation": [
+    "Independent prospective app cohort",
+    "Calibration and subgroup assessment",
+    "Clinical advisor review",
+    "PATH cohort data access and explicit outcome harmonization"
+  ],
+  "population_limit": "UK adult cigarette quit-attempt EMA study; not validated for vaping, pouches or hookah"
+}

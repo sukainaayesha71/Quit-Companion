@@ -1,0 +1,155 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // NicotineUser (SDD §6, canonical entity name) — one document per
+    // authenticated user, keyed by their Firebase Auth UID. Written by
+    // FirestoreUserRepository.saveUser() as nicotineUsers/{userId}, where
+    // userId is exactly the uid FirebaseAuthRepository returns on
+    // register/login (mobile/lib/data/firebase_auth_repository.dart,
+    // firestore_user_repository.dart). No other write path exists.
+    match /nicotineUsers/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // UsageLog (SDD §6), written by FirestoreUsageLogRepository as
+      // nicotineUsers/{userId}/usageLogs/{logId}. Firestore rules do not
+      // cascade to subcollections, so this needs its own explicit match
+      // even though it mirrors the parent document's rule exactly.
+      match /usageLogs/{logId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // CravingLog (SDD §6, Module 3 — Habit & Trigger Tracking, FR5/FR6),
+      // written by FirestoreCravingLogRepository as
+      // nicotineUsers/{userId}/cravingLogs/{logId}. Same reasoning as
+      // usageLogs above — subcollection rules don't inherit the parent's.
+      match /cravingLogs/{logId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // JournalEntry (SDD §6, Module 5 — Relapse Prevention & Reflection,
+      // FR12), written by FirestoreJournalRepository as
+      // nicotineUsers/{userId}/journalEntries/{entryId}. Same reasoning as
+      // usageLogs/cravingLogs above — subcollection rules don't inherit
+      // the parent's.
+      match /journalEntries/{entryId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // HealthBotConversation (SDD §6, Module 6 — Health-Bot, FR8), written
+      // by FirestoreHealthBotRepository as
+      // nicotineUsers/{userId}/healthBotConversations/{conversationId}.
+      // History is readable only by the account that owns it.
+      match /healthBotConversations/{conversationId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // HabitAlternativeAttempt (Module 7 — Alternatives & Habit
+      // Replacement, FR7), written by
+      // FirestoreHabitAlternativeAttemptRepository as
+      // nicotineUsers/{userId}/habitAlternativeAttempts/{attemptId}.
+      match /habitAlternativeAttempts/{attemptId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Badge (Module 8 — Gamification & Rewards, FR9), written by
+      // FirestoreBadgeRepository as nicotineUsers/{userId}/badges/{badgeId}.
+      match /badges/{badgeId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /generatedPlans/{kind} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false; // Written by the authenticated backend Admin SDK.
+      }
+
+      match /reminderSchedules/{scheduleId} {
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow create, update: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(['enabled','timezone','dailyTimes','habitEnabled','recoveryEnabled','updatedAt'])
+          && request.resource.data.keys().hasAll(['enabled','timezone','dailyTimes','habitEnabled','recoveryEnabled','updatedAt'])
+          && request.resource.data.enabled is bool
+          && request.resource.data.timezone is string && request.resource.data.timezone.size() <= 80
+          && request.resource.data.dailyTimes is list && request.resource.data.dailyTimes.size() <= 5
+          && (!request.resource.data.enabled || request.resource.data.dailyTimes.size() >= 3)
+          && request.resource.data.habitEnabled is bool && request.resource.data.recoveryEnabled is bool
+          && request.resource.data.updatedAt == request.time;
+        match /deliveryReceipts/{receipt} { allow read, write: if false; }
+      }
+
+      // Article bookmark (Module 10 — Knowledge Hub & Education, FR13),
+      // written by FirestoreArticleBookmarkRepository as
+      // nicotineUsers/{userId}/articleBookmarks/{articleId} — existence
+      // of the doc means "bookmarked" (same pattern as Module 9's likes
+      // subcollection). Private per-user, unlike CommunityPost below.
+      match /articleBookmarks/{articleId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // FCM registration tokens are private device credentials. Clients
+      // cannot read/list them; an authenticated user can only create,
+      // refresh, or delete token documents under their own UID.
+      match /fcmTokens/{tokenId} {
+        allow read: if false;
+        allow create, update: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(['token', 'notificationTypes', 'updatedAt'])
+          && request.resource.data.keys().hasAll(['token', 'notificationTypes', 'updatedAt'])
+          && request.resource.data.token is string
+          && request.resource.data.token.size() <= 4096
+          && request.resource.data.notificationTypes is list
+          && request.resource.data.notificationTypes.hasAll(['daily_checkin'])
+          && request.resource.data.notificationTypes.hasOnly([
+            'daily_checkin', 'habit_reminder', 'recovery_motivation'
+          ])
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // CommunityPost (SDD §6, Module 9 — Community & Peer Support, FR11).
+    // The FIRST top-level, cross-user collection in this app — SRDS UC8
+    // requires posts to be "visible to all registered users," unlike
+    // every entity above, which stays private per-user under
+    // nicotineUsers/{userId}/... Read is open to any authenticated user;
+    // create requires the post's own userId field to match the writer's
+    // uid (prevents posting as someone else); no update/delete rule is
+    // granted (neither is built — see the Module 9 implementation
+    // record's "not done" section).
+    match /communityPosts/{postId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+
+      // likes/{userId} — existence of the doc (keyed by the liking
+      // user's own uid) means "this user liked this post." A user may
+      // only create/delete their own like document.
+      match /likes/{likeUserId} {
+        allow read: if request.auth != null;
+        allow create, delete: if request.auth != null && request.auth.uid == likeUserId;
+      }
+
+      // replies/{replyId} — same create-only, own-userId-only rule as
+      // the parent post.
+      match /replies/{replyId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      }
+    }
+
+    // No other collections have repository code yet. SDD §6 names one
+    // remaining future entity (HabitAlternative — the fixed content
+    // library itself, not the HabitAlternativeAttempt log above, which
+    // IS implemented) but it is not implemented in mobile/lib/data — do
+    // not add rules for it speculatively. Add a scoped match block here,
+    // modeled on the ones above, when it is actually built.
+
+    // Explicit default-deny for everything else, including any path above
+    // this line failing its condition. Without this, an unmatched path
+    // falls through to Firestore's own default (deny), but this makes the
+    // intent explicit rather than relying on that default silently.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

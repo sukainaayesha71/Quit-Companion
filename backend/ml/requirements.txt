@@ -1,0 +1,10 @@
+# ML pipeline dependencies — separate from backend/requirements.txt (the
+# FastAPI runtime) because pandas/scikit-learn/xgboost are only needed for
+# offline dataset inspection/training, never by the deployed API service.
+# See docs/superpowers/plans/2026-08-17-backend-ai-ml-implementation-plan.md.
+pandas>=2.2,<3.0
+numpy>=1.26,<3.0
+scikit-learn>=1.5,<2.0
+xgboost>=2.0,<3.0
+joblib>=1.4,<2.0
+pyreadr>=0.5,<1.0  # reads the dataset's native .rds (R) format — see ml/data/raw/

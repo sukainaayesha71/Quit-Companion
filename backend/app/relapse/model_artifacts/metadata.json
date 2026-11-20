@@ -1,0 +1,35 @@
+{
+  "_comment": "Research-preview only. See backend/app/relapse/predictor.py (ModelPredictor) and backend/ml/README.md's Known limitations section before changing anything here.",
+  "source_artifact": "backend/ml/models/cravinglog_compatible__random_forest.joblib, copied unchanged into this tracked location so a fresh checkout can load it without depending on the gitignored backend/ml/ directory",
+  "trained_by": "backend/ml/train.py",
+  "trained_at": "2026-08-17T18:02:06.889286+00:00",
+  "dataset": "EMASENS_ML (Perski et al., 2024), Zenodo DOI 10.5281/zenodo.10472386, v2.0.0",
+  "random_seed": 555,
+  "feature_set": "cravinglog_compatible",
+  "model": "random_forest",
+  "feature_order": [
+    "craving_imp",
+    "happy_imp",
+    "excited_imp",
+    "enthusiastic_imp",
+    "contented_imp",
+    "calm_imp",
+    "irritable_imp",
+    "anxious_imp",
+    "stressed_imp",
+    "sad_imp",
+    "bored_imp"
+  ],
+  "thresholds": {
+    "low_threshold": 0.0113,
+    "high_threshold": 0.0225,
+    "note": "These are THIS model's own derived thresholds (backend/ml/outputs/training_metadata.json, results_summary.cravinglog_compatible.random_forest.derived_thresholds) - NOT the top-level risk_thresholds in that file, which belong to the full_ema/random_forest model instead."
+  },
+  "roc_auc": 0.5032146014904636,
+  "warning": "ROC-AUC ~0.50 on held-out EMASENS_ML data = chance level, not a working predictor. Not clinically validated. Never the production default (see app/config.py RELAPSE_PREDICTOR_MODE) and never exposed to end users - research-preview / demo path only.",
+  "reproduction_verified": {
+    "date": "2026-08-21",
+    "method": "python -m ml.train re-run from backend/ (same code, same EMASENS_ML dataset, same random_seed=555, same library versions)",
+    "result": "Bit-for-bit identical output: cravinglog_compatible__random_forest.joblib SHA-256 cbc47f4770a392caac2c2b3cf8f5609e65933db378cd19c9c7a83c0db969d306 matched exactly, all metrics (roc_auc, thresholds) unchanged. The .joblib file in this directory was not replaced, since it was already identical to the new run's output - confirms the pipeline is fully deterministic and reproducible from a fresh checkout."
+  }
+}
