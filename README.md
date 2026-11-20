@@ -1,406 +1,360 @@
-# Quit Companion — delivery and setup guide
+<div align="center">
 
-Android nicotine recovery app built with Flutter, Firebase and a Python FastAPI
-backend. This delivery includes Android source, backend source, tests, research
-tools and deployment templates. iOS and public backend hosting are not included
-in the current running setup.
+<img src="mobile/assets/branding/quit_companion_logo.png" alt="Quit Companion logo" width="96">
 
-## 1. What the recipient must configure
+# Quit Companion
 
-The delivered app currently references the developer's Firebase project,
-`quit-companion`, and Android package `com.quitcompanion.quit_companion`.
-Decide whether to keep that Firebase project with authorized access or use a new
-project. Do not assume the developer's laptop configuration will work elsewhere.
+**A Mobile Application Supporting Nicotine Recovery Through Habit Tracking, Personalized Guidance & Improved Overall Health**
 
-| Item | Current setup | Required action on the recipient's setup |
-| --- | --- | --- |
-| Project location | Previously under the developer's Downloads folder | Extract anywhere and use that local path. Commands below start at the repository root containing this README. |
-| Flutter and Android SDK | Machine-specific paths in `mobile/android/local.properties` | Regenerate this file on the new machine; do not reuse paths containing another Windows username or Flutter installation. |
-| Python environment | `backend/.venv/` on the developer's machine | Create a new virtual environment and install dependencies. Do not copy the old virtual environment. |
-| Firebase Android configuration | `mobile/android/app/google-services.json` | Download configuration for the selected Firebase project and exact Android package. |
-| Flutter Firebase options | `mobile/lib/core/config/firebase_options.dart` | Regenerate when changing Firebase projects. Replacing only the JSON file is insufficient. |
-| Firebase CLI mapping | Project references in `mobile/firebase.json` | Regenerate/review when changing projects; always pass the intended project ID when deploying rules or indexes. |
-| Google sign-in fingerprint | Developer's debug signing certificate | Register the new machine's SHA-1 and SHA-256 for `com.quitcompanion.quit_companion`, then download the updated JSON and rebuild. |
-| Backend Firebase credentials | Local Admin SDK private-key JSON and its path in `backend/.env` | Obtain an authorized service-account key for the selected project and set its actual local path. Do not redistribute the developer's private key. |
-| Gemini | Developer's server-side key/model settings | Supply an authorized Gemini key in `backend/.env`; verify the configured model is available to that key. |
-| Backend address | Local API on port 8000 | Choose USB localhost forwarding, emulator host address, or a deployed HTTPS URL. |
-| Phone authentication | WhatsApp OTP by default; Firebase SMS is optional | Configure Meta sender credentials and an approved authentication template. See section 5 and docs/WHATSAPP_SETUP.md. |
-| Reminder preferences | Saved per device, plus per-account remote schedules | Enable permissions and desired reminder options on the recipient's phone. Existing local preferences do not transfer with source code. |
-| Push worker | Background Python process on the developer's laptop | Start a worker on the recipient's machine; old background processes do not transfer. |
-| Release signing | Release build currently uses debug signing in Gradle | Configure the recipient's release keystore before distributing a production app. Never deliver the developer's signing key as a public project asset. |
+An Android app that helps people quit cigarettes, vapes, nicotine pouches and hookah. It combines craving tracking, an experimental relapse-risk estimate, personalised alternatives, a safety-bounded Health-Bot and peer support.
 
-Firebase client configuration identifies the project; it is different from an
-Admin SDK private key. Keep Admin keys, Gemini/Meta secrets and real `.env` files
-out of Git and public delivery archives. Supply credentials separately through
-an authorized secure handover.
+![Flutter](https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white)
+![Dart](https://img.shields.io/badge/Dart-0175C2?logo=dart&logoColor=white)
+![Firebase](https://img.shields.io/badge/Firebase-FFCA28?logo=firebase&logoColor=black)
+![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B%20%28API%2026%29-3DDC84?logo=android&logoColor=white)
 
-## 2. Prerequisites
+</div>
 
-- Flutter compatible with the checked-in lockfile: **Flutter 3.47.0 or newer**
-  with **Dart 3.13.0 or newer**. Keep `mobile/pubspec.lock` for reproducibility.
-- Android Studio/Android SDK, platform tools (`adb`), and a compatible Java
-  runtime; Android compilation targets Java 17.
-- Android 8.0/API 26 or newer on the test phone, with USB debugging enabled.
-- Python 3.12, recommended to match the development backend environment.
-- Internet access for dependency installation, Firebase, Gemini and FCM.
-- Firebase project access. Node.js/npm and Firebase/FlutterFire CLIs are needed
-  when configuring a new project or deploying Firebase rules/indexes.
+---
 
-Commands below use Windows PowerShell. On macOS/Linux, use the equivalent paths
-and `.venv/bin/python` instead of `.venv\Scripts\python.exe`.
+## Table of Contents
 
-## 3. Configure Firebase
+- [Project Overview](#project-overview)
+- [Problem Statement](#problem-statement)
+- [Project Objectives](#project-objectives)
+- [Key Features](#key-features)
+- [Technology Stack](#technology-stack)
+- [System Architecture](#system-architecture)
+- [Project Screenshots](#project-screenshots)
+- [Machine Learning and Relapse-Risk Prediction](#machine-learning-and-relapse-risk-prediction)
+- [Installation and Setup](#installation-and-setup)
+- [Repository Structure](#repository-structure)
+- [Testing and Verification](#testing-and-verification)
+- [Current Implementation and Deployment Status](#current-implementation-and-deployment-status)
+- [Privacy and Security](#privacy-and-security)
+- [Future Improvements](#future-improvements)
+- [Contributors and Supervisor](#contributors-and-supervisor)
+- [Documentation and References](#documentation-and-references)
 
-### Keep the existing project
+---
 
-Obtain authorized access to `quit-companion`. Existing accounts and Firestore
-records remain in that project. Register the recipient's signing fingerprints
-against **`com.quitcompanion.quit_companion`**, not the older
-`com.example.quit_companion` registration.
+## Project Overview
 
-Run on the recipient's laptop:
+Quit Companion is a final-year project. It replaces a simple quit-day counter with one recovery companion that follows the user's whole quitting journey:
 
-```powershell
-keytool -list -v -alias androiddebugkey -keystore "$env:USERPROFILE\.android\debug.keystore" -storepass android -keypass android
-```
+1. **Plan:** onboarding builds a personal quit plan (quit now, reduce gradually, or quit on a chosen date).
+2. **Track:** the user logs cravings with intensity, mood, trigger and context, including while offline.
+3. **Respond:** each craving gets a low, medium or high relapse-risk estimate, and high-risk moments show ranked alternatives right away.
+4. **Support:** a Health-Bot answers withdrawal questions within strict safety limits, and an anonymous community gives peer support.
+5. **Recover:** badges, milestones, a private journal and compassionate restart plans help the user continue after a slip.
 
-This applies to Flutter's standard debug keystore. If it does not exist yet,
-build/run the Android app once. If `keytool` is not on PATH, use the executable
-inside Android Studio's `jbr/bin` directory.
+The app is built with **Flutter** for Android and uses **Firebase** for authentication, data and push messaging. A **Python FastAPI** backend handles server-side work: relapse scoring, plan generation, the Health-Bot, phone OTP, notifications and account deletion.
 
-In Firebase Console, open Project settings, select the exact Android package,
-and add the SHA-1 and SHA-256 printed by the command. Download the updated
-`google-services.json` to:
+## Problem Statement
 
-```text
-mobile/android/app/google-services.json
-```
+Nicotine use is common among university students and young adults, and many who try to quit relapse because of stress, social pressure, withdrawal symptoms and a lack of ongoing support. Most available tools are day counters or general health trackers. They do not explain the triggers behind cravings, give no early warning before a likely slip, offer no reliable health guidance, and do little to keep users motivated after the first week, which is when relapse is most likely.
 
-### Use a different Firebase project
+## Project Objectives
 
-Create/register an Android app using the existing package name, unless you also
-intend to change the Android namespace/application ID and Kotlin package.
-Enable Email/Password, Google and Phone providers as required, and create the
-default Firestore database.
+- Provide one centralised, personalised recovery platform from registration through long-term recovery.
+- Estimate relapse risk after every craving log, and study machine-learning models on a public research dataset honestly.
+- Recommend habit-replacement activities that adapt to what has actually helped each user.
+- Offer a safe Health-Bot that stays within nicotine recovery, never recommends medication, and escalates emergencies.
+- Increase motivation through badges, points, streaks and health-recovery milestones.
+- Reduce isolation through an anonymous peer-support community.
+- Support reflection through a private journal and personalised restart plans after a relapse.
+- Provide an educational Knowledge Hub and timely reminders.
 
-From `mobile/`, configure the selected project:
+## Key Features
 
-```powershell
-npm install -g firebase-tools
-firebase login
-dart pub global activate flutterfire_cli
-flutterfire configure --project=YOUR_FIREBASE_PROJECT_ID --platforms=android --out=lib/core/config/firebase_options.dart
-```
-
-Replace `YOUR_FIREBASE_PROJECT_ID` with the actual ID. If `flutterfire` is not
-found, add Dart's global executable directory to PATH. Confirm that the generated
-Dart options, Android JSON and Firebase CLI mapping all point to the same
-project. Register signing fingerprints and download the Android JSON after
-Google sign-in is enabled.
-
-For a new project, deploy the supplied rules and index definitions from
-`mobile/`:
-
-```powershell
-firebase deploy --only firestore:rules,firestore:indexes --project=YOUR_FIREBASE_PROJECT_ID
-```
-
-If the CLI proposes deleting existing indexes, review the target project before
-confirming. For an existing shared database, the additive alternative is
-`backend/tools/ensure_indexes.py`: run it with configured Admin credentials to
-preview, then use `--apply` to preserve existing single-field definitions while
-adding the required group indexes.
-
-Required ascending collection-group indexes:
-
-| Collection group | Field |
+| Area | What it does |
 | --- | --- |
-| `cravingLogs` | `riskAssessmentPending` |
-| `habitAlternativeAttempts` | `outcomeHelped` |
-| `reminderSchedules` | `enabled` |
+| **Authentication** | Email and password (verified email required), Google sign-in, and phone sign-in through a WhatsApp one-time code. Firebase SMS is an optional alternative. Optional fingerprint unlock for email accounts. |
+| **Onboarding & quit plan** | Collects product type, daily usage, cost, motivation, challenges and history, then calculates a quit date and, for gradual quitting, a linear taper schedule. |
+| **Dashboard & progress** | Nicotine-free days (or a countdown before the quit date), money saved, cravings resisted, weekly trends and health-recovery milestones. |
+| **Craving & trigger tracking** | Logs intensity, mood, trigger, location, activity and notes. An encrypted per-account offline outbox syncs later, and logs that could not be scored yet are marked *pending* until the background worker scores them. |
+| **Relapse-risk estimate** | Returns *Low*, *Medium* or *High* after each log and shows an early-warning screen for high risk. See [Machine Learning](#machine-learning-and-relapse-risk-prediction). |
+| **Alternatives & mini-games** | Curated activities (e.g., 4-7-8 breathing, cold water, a short walk) and distraction mini-games such as Memory Match, Tap & Pop and Craving Countdown. Activities are ranked by the user's own "Did this help?" feedback. |
+| **Personalised plans** | Initial, weekly and restart plans. Gemini picks actions from a fixed catalogue of safe actions, and a labelled personalised fallback is used if generation is unavailable. |
+| **Health-Bot** | Gemini answers grounded in curated CDC and NCI guidance, with source links. A disclaimer appears on each visit, emergency phrases are checked locally first, medication and dosage requests are refused, and a labelled rule-based fallback is used when AI is unavailable. |
+| **Gamification** | Six badge tiers (1, 7, 30, 90, 180 and 365 days) worth 10–1,200 points. Points are derived from earned badges, so they can't be awarded twice, and earned badges are kept after a relapse. |
+| **Community** | Anonymous posts with stable generated handles, categories (Milestone, Tip, Question, Motivation), likes and replies with live updates, a keyword content filter, and author-only deletion. |
+| **Relapse prevention & journal** | Private journal with edit and delete, relapse logging that resets the day counter, and a compassionate restart plan. |
+| **Knowledge Hub** | Bundled article library by topic (Withdrawal, Health Benefits, Science of Addiction) with private bookmarks and a Saved filter. |
+| **Reminders & notifications** | 3–5 daily check-ins scheduled on the device or delivered through FCM (not both at once), plus habit and recovery reminders, badge and restart-plan push events. |
+| **Privacy controls** | Explicit consent, separate opt-in research consent, per-user data isolation, and full account deletion. |
 
-Wait until the indexes are READY. These indexes and rules were configured in
-the developer's project; a new project needs its own setup. Changing Firebase
-projects does not migrate existing accounts or data.
+## Technology Stack
 
-Official references:
-[Flutter Firebase setup](https://firebase.google.com/docs/flutter/setup),
-[FlutterFire CLI options](https://firebase.flutter.dev/docs/cli),
-[Firebase configuration](https://firebase.google.com/docs/projects/learn-more).
+| Layer | Technologies |
+| --- | --- |
+| Mobile app | Flutter, Dart, `provider` state management, `flutter_local_notifications`, `local_auth`, `flutter_secure_storage` |
+| Firebase | Authentication, Cloud Firestore, Cloud Messaging (FCM) |
+| Backend API | Python 3.12, FastAPI, uvicorn, Pydantic, Firebase Admin SDK, httpx |
+| AI & ML | Google Gemini API (Health-Bot and plan action selection), XGBoost 2.1.4, scikit-learn 1.9.0, joblib |
+| Messaging | WhatsApp Cloud API (Meta) for phone OTP |
+| Deployment templates | Docker, Docker Compose, Caddy (TLS proxy) |
+| Testing | `flutter_test`, pytest |
+| Tools | Android Studio, Visual Studio Code, Git and GitHub |
 
-## 4. Configure and start the backend
+## System Architecture
 
-From the repository root:
+```mermaid
+flowchart LR
+    subgraph Device["Android phone"]
+        App["Flutter app<br/>(encrypted offline outbox)"]
+    end
+
+    subgraph Firebase["Firebase"]
+        Auth["Authentication"]
+        DB["Cloud Firestore"]
+        FCM["Cloud Messaging"]
+    end
+
+    subgraph Server["Python backend"]
+        API["FastAPI service"]
+        Worker["Background worker"]
+        Model["XGBoost artifact"]
+    end
+
+    Gemini["Google Gemini API"]
+    WA["WhatsApp Cloud API"]
+
+    App -->|sign-in| Auth
+    App -->|private user data| DB
+    FCM -->|push| App
+    App -->|HTTPS + Firebase ID token| API
+    API --> Model
+    API -->|Admin SDK| DB
+    API --> FCM
+    API --> Gemini
+    API --> WA
+    Worker --> DB
+    Worker --> Model
+    Worker --> FCM
+```
+
+- The app reads and writes the user's private data **directly in Firestore**. Security rules let each user access only their own documents.
+- The app calls the **FastAPI backend** for anything that needs server-side intelligence or secrets. Every protected call carries a Firebase ID token, which the backend verifies.
+- **Gemini and WhatsApp keys exist only on the server**; they are never shipped in the app.
+- The **background worker** scores pending craving assessments, sends opted-in scheduled notifications and prompts for activity feedback.
+
+Main API endpoints:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /predict/relapse` | Relapse-risk estimate for a craving log |
+| `POST /recommend/alternative` | Personalised ranking of alternatives |
+| `POST /plans/{initial\|weekly\|restart}` | Plan generation from a fixed action catalogue |
+| `POST /healthbot/query` | Health-Bot answer |
+| `POST /auth/phone/send-otp`, `POST /auth/phone/verify-otp` | WhatsApp OTP, exchanged for a Firebase custom token |
+| `PUT /notifications/schedule`, `POST /notifications/send/{type}`, `POST /notifications/events/{type}` | Reminder scheduling and FCM delivery |
+| `DELETE /community/posts/{id}`, `DELETE /journal/entries/{id}`, `DELETE /account` | Recursive content and account deletion |
+| `GET /health`, `GET /ready` | Liveness and readiness checks |
+
+## Project Screenshots
+
+These screens are from the project's UI design set in [`docs/UI_Design/`](docs/UI_Design/), which the Flutter screens were built to match.
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/UI_Design/welcome%20screen%201.png" alt="Welcome screen" width="220"><br><sub><b>Welcome</b><br>Entry point with Register and Log In</sub></td>
+    <td align="center" width="33%"><img src="docs/UI_Design/user%20on%20boarding%204.png" alt="Onboarding product selection" width="220"><br><sub><b>Onboarding</b><br>Choose vape, cigarettes, pouches or hookah</sub></td>
+    <td align="center" width="33%"><img src="docs/UI_Design/dashboard%205.png" alt="Dashboard" width="220"><br><sub><b>Dashboard</b><br>Nicotine-free days, money saved and quick access</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/UI_Design/log%20craving%206.png" alt="Log a craving" width="220"><br><sub><b>Log a Craving</b><br>Intensity, mood, trigger and context</sub></td>
+    <td align="center"><img src="docs/UI_Design/6a.png" alt="Alternatives list" width="220"><br><sub><b>Alternatives</b><br>Breathing, quick activities and mini-games</sub></td>
+    <td align="center"><img src="docs/UI_Design/8%20healthbot.png" alt="Health-Bot" width="220"><br><sub><b>Health-Bot</b><br>Withdrawal Q&amp;A with a medical disclaimer</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/UI_Design/progress%20and%20rewards%209.png" alt="Progress and rewards" width="220"><br><sub><b>Progress &amp; Rewards</b><br>Streak, badges and milestones</sub></td>
+    <td align="center"><img src="docs/UI_Design/community%2010.png" alt="Community forum" width="220"><br><sub><b>Community</b><br>Anonymous posts, likes and replies</sub></td>
+    <td align="center"><img src="docs/UI_Design/journal%20reflection%2013.png" alt="Journal" width="220"><br><sub><b>My Journal</b><br>Private reflection entries</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/UI_Design/relapse%2011.png" alt="Relapse log" width="220"><br><sub><b>Relapse Log</b><br>Record a slip without judgement</sub></td>
+    <td align="center"><img src="docs/UI_Design/restart%20plan%20result%20screen%2012.png" alt="Restart plan" width="220"><br><sub><b>Restart Plan</b><br>Personalised next steps after a relapse</sub></td>
+    <td align="center"><img src="docs/UI_Design/knowledge%20hub%2014.png" alt="Knowledge Hub" width="220"><br><sub><b>Knowledge Hub</b><br>Articles by topic with bookmarks</sub></td>
+  </tr>
+</table>
+
+## Machine Learning and Relapse-Risk Prediction
+
+> **Important:** the relapse-risk estimate is an **experimental support feature**. It is **not** a clinically validated diagnostic or predictive system, and every API response is marked `clinically_validated=false`.
+
+**How it works**
+
+- `POST /predict/relapse` (and the background worker, for pending logs) uses the predictor chosen by `RELAPSE_PREDICTOR_MODE` in `backend/app/config.py`.
+- The current default is `ml`. It runs a packaged **XGBoost pipeline** (`emasens-xgboost-v1`) from `backend/app/relapse/model_artifacts/app_candidate.joblib`, and the backend checks the artifact's SHA-256 checksum at startup.
+- Inputs are craving intensity, ten mood ratings, and optional motivation, confidence, discomfort and cigarette-availability answers. Unanswered fields are filled with the training-set median, and the response lists which ones were imputed.
+- The predicted probability is mapped to *Low*, *Medium* or *High* using thresholds saved from development data.
+- `RELAPSE_PREDICTOR_MODE=rule_based` switches to a deterministic decision table instead:
+
+  | Rule | Condition | Risk |
+  | --- | --- | --- |
+  | 1 | Craving intensity 8–10 | High |
+  | 2 | Mood *stressed* and trigger *social pressure* | High |
+  | 3 | 3 or more cravings in the last 24 hours | High |
+  | 4 | Intensity 5–7 and mood *bored* | Medium |
+  | 5 | Otherwise | Low |
+
+**Training data and results**
+
+The model was trained and evaluated on the public **EMASENS_ML v2.0.0** dataset (Perski et al., [DOI 10.5281/zenodo.10472386](https://doi.org/10.5281/zenodo.10472386)). Data were split by participant, with held-out participants used for final scoring. The outcome is a lapse at the *next* check-in for the same participant.
+
+| Held-out measure | Result |
+| --- | --- |
+| ROC-AUC | 0.8406 (participant-bootstrap 95% interval 0.696–0.914) |
+| Average precision | 0.2309 (constant baseline 0.0510) |
+| Precision / recall at the high-risk threshold | 0.160 / 0.723 |
+
+**Limitations**
+
+- These are research results on study data, **not measured accuracy inside the app**.
+- Precision at the high-risk threshold is low, so **many high-risk flags are false alarms**.
+- The dataset covers UK adult cigarette quit attempts. Vapes, pouches, hookah and this app's user population are **not validated**.
+- Models trained only on basic craving-log fields performed near chance; the extended inputs are what make the difference.
+- The PATH Study data named in the original specification could not be obtained, so no PATH-trained model is claimed.
+- Clinical usefulness requires independent prospective validation and medical review, neither of which has been done.
+
+For full details, see [ML integration](docs/ML_INTEGRATION.md), the [ML pipeline guide](backend/ml/README.md) and [the evaluation results](docs/ML_CANDIDATE_EVALUATION.json).
+
+**Personalised recommendations** use a contextual Beta-Bernoulli estimate based only on the user's own feedback. Outcomes under the same trigger or mood count more, and unanswered attempts are never counted as failures. The score is a ranking aid, not a clinical success rate.
+
+## Installation and Setup
+
+The complete step-by-step guide is in **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)**. It covers Firebase configuration, backend environment variables, WhatsApp OTP, running on a physical phone or emulator, notifications, and a delivery checklist.
+
+**Prerequisites:** Flutter 3.47+ (Dart 3.13+), Android Studio and SDK with Java 17, an Android 8.0+ device or emulator, Python 3.12, and access to a Firebase project.
+
+Quick start for a local development setup (Windows PowerShell):
 
 ```powershell
+# Backend
 cd backend
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env
-```
-
-Copy the template only when creating a new environment; do not overwrite a
-configured `.env`. Edit `backend/.env`:
-
-```dotenv
-FIREBASE_SERVICE_ACCOUNT_JSON=./firebase-serviceAccount.json
-GEMINI_API_KEY=YOUR_SERVER_SIDE_GEMINI_KEY
-GEMINI_MODEL=gemini-3.5-flash-lite
-RELAPSE_PREDICTOR_MODE=ml
-WORKER_POLL_SECONDS=30
-REQUIRE_CLINICAL_REVIEW=false
-```
-
-Place the authorized Admin SDK key at the configured path. A relative path is
-resolved from the backend working directory, so always start these commands
-inside `backend/`. If you store the key elsewhere, use that machine's path
-(prefer forward slashes in Windows configuration values).
-
-The named Gemini model is the current development setting, not a guarantee of
-future availability. If unavailable, choose an accessible compatible model and
-update `GEMINI_MODEL`. Restart the backend after changing `.env`.
-
-`REQUIRE_CLINICAL_REVIEW=false` is the local development setting and does not
-represent medical approval. Production review gating requires a genuine review
-record; see `deploy/reviews/README.md`.
-
-Start the API, assessment recovery, scheduled push delivery and automatic phone
-forwarding:
-
-```powershell
+Copy-Item .env.example .env        # then fill in your own credentials
 .\.venv\Scripts\python.exe tools/local_services.py --worker --notifications --usb
-```
 
-Keep this terminal running. To run without scheduled push delivery, omit
-`--notifications`. Do not launch duplicate supervisors/workers for a demo.
-
-Check in another terminal:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-```
-
-Expected response: `status: ok`. API documentation is at
-`http://127.0.0.1:8000/docs`. Health only confirms the API is running;
-authenticated Firebase/Gemini/FCM requests need their own verification.
-Diagnostic logs/state from local supervision are under `backend/.runtime/`.
-
-## 5. Phone OTP configuration
-
-Phone login uses WhatsApp OTP for all numbers by default. Configure the Meta
-Cloud API sender and approved authentication template as described in
-[WhatsApp setup](docs/WHATSAPP_SETUP.md). The legacy test-number allowlist is
-not used by the default factory.
-
-For optional Firebase SMS instead, add
-`--dart-define=PHONE_AUTH_PROVIDER=firebase` to the app run/build command.
-Firebase SMS requires the applicable Firebase billing, region and app-verification
-setup; Firebase test numbers can be used without sending real SMS.
-
-Real WhatsApp OTP requires the recipient's authorized Meta configuration:
-
-```dotenv
-WHATSAPP_ACCESS_TOKEN=YOUR_META_ACCESS_TOKEN
-WHATSAPP_PHONE_NUMBER_ID=YOUR_META_PHONE_NUMBER_ID
-WHATSAPP_BUSINESS_ACCOUNT_ID=YOUR_META_BUSINESS_ACCOUNT_ID
-WHATSAPP_API_VERSION=v27.0
-WHATSAPP_OTP_TEMPLATE_NAME=otp_verification
-WHATSAPP_OTP_TEMPLATE_LANGUAGE=en_US
-```
-
-Verify the API version and approved authentication template for the recipient's
-Meta account. Enabling Firebase's Phone provider does not configure WhatsApp.
-WhatsApp OTP requires the Python backend and its Firebase Admin key. The
-optional Firebase SMS route does not require Meta credentials. Provider selection is in
-`mobile/lib/features/auth/data/default_phone_auth_repository.dart`.
-
-## 6. Run the Android app on another laptop
-
-Open the **`mobile/` folder containing `pubspec.yaml`** in Android Studio.
-
-In a new terminal, from the repository root:
-
-```powershell
+# Mobile (new terminal, from the repository root)
 cd mobile
-flutter doctor
-flutter doctor --android-licenses
-```
-
-If the delivery archive contains `android/local.properties` from the original
-machine, remove that generated file before the first build:
-
-```powershell
-Remove-Item .\android\local.properties -ErrorAction SilentlyContinue
 flutter pub get
-adb devices
 adb reverse tcp:8000 tcp:8000
 flutter run --dart-define=OTP_BACKEND_BASE_URL=http://127.0.0.1:8000
 ```
 
-Flutter regenerates local Android properties using the recipient's SDK setup.
-Accept the phone's USB debugging authorization. With multiple connected devices,
-select one explicitly using `adb -s DEVICE_SERIAL ...` and
-`flutter run -d DEVICE_SERIAL ...`; obtain that serial from `adb devices`
-instead of copying the developer's phone ID.
+You need your own authorised Firebase configuration, Firebase Admin key, Gemini key and (for phone sign-in) Meta WhatsApp credentials. The [setup guide](docs/SETUP_GUIDE.md) explains each one, and the [WhatsApp setup guide](docs/WHATSAPP_SETUP.md) covers the Meta configuration.
 
-The backend `--usb` option restores port forwarding after reconnects while its
-supervisor is running. It requires `adb` on PATH or the standard Windows Android
-SDK location. The app URL must be exactly `http://127.0.0.1:8000`, without
-backslashes or a trailing slash added to the command.
+## Repository Structure
 
-Alternative endpoints:
-
-| Environment | Backend URL |
-| --- | --- |
-| Physical Android phone with ADB forwarding | `http://127.0.0.1:8000` |
-| Android emulator | `http://10.0.2.2:8000` |
-| Public deployment | The recipient's actual `https://...` API address |
-
-The default in `mobile/lib/core/config/otp_backend_config.dart` is the emulator
-address. A physical phone needs an explicit `--dart-define` as shown above.
-This definition is set at build/run time. Restart `flutter run` to change it.
-
-A phone on the same Wi-Fi can alternatively use the laptop's LAN address, but
-that requires binding the API to `0.0.0.0`, allowing the port through the laptop
-firewall, and setting the corresponding LAN URL. The supplied local supervisor
-binds to `127.0.0.1`; the USB commands above work without changing that binding.
-
-If package resolution stalls and packages are already cached:
-
-```powershell
-flutter --no-version-check --suppress-analytics pub get --offline
-flutter --no-version-check --suppress-analytics run --no-pub --dart-define=OTP_BACKEND_BASE_URL=http://127.0.0.1:8000
+```text
+Quit-Companion/
+├── mobile/                  Flutter Android application
+│   ├── lib/                 app/, core/, features/, shared/ (feature-first layout)
+│   ├── test/                Flutter unit and widget tests
+│   ├── android/             Android project (package com.quitcompanion.quit_companion)
+│   ├── assets/              Branding, onboarding and knowledge images
+│   ├── firestore.rules      Per-user Firestore security rules
+│   └── firestore.indexes.json
+├── backend/                 Python FastAPI service
+│   ├── app/                 Routers and services: relapse, coaching, healthbot, otp,
+│   │                        whatsapp, notifications, content, account_deletion, worker
+│   ├── ml/                  Research data, training and evaluation pipeline
+│   ├── tools/               Local supervisor, index setup, API benchmark
+│   ├── tests/               pytest suite
+│   └── Dockerfile
+├── deploy/                  Docker Compose, Caddyfile, clinical-review record template
+└── docs/                    Setup guide, ML records, audits, UI designs, implementation history
 ```
 
-On a new laptop, the first dependency installation normally needs internet.
-Use `--no-pub` only after dependency resolution succeeds. Do not repeatedly run
-`flutter clean` to fix network delays.
-
-After Dart-only changes, uppercase **R** hot-restarts a running debug app.
-After replacing Android Firebase configuration or changing native settings,
-stop and rebuild the app.
-
-## 7. Notifications and AI behavior
-
-In the app's Notifications screen, grant Android notification permission and
-choose daily reminders and push notifications independently.
-
-- Local reminders are scheduled on the phone.
-- Push notifications deliver milestone and recovery events. They require a
-  registered device token, phone internet access and the running backend.
-- The daily frequency determines the check-in schedule; habit and recovery
-  categories are enabled separately.
-- Daily reminders use the phone's timezone and continue without internet.
-- Either option can be enabled alone or together. Turning one off leaves the
-  other unchanged. The old remote daily schedule is disabled when enabling push
-  notifications, avoiding duplicate check-ins.
-- Source delivery does not preserve the developer's device token or phone
-  preferences. Each recipient device must register its own token.
-- Android may delay notifications. Force-stopped apps generally need to be
-  reopened. Permission, battery restrictions and actual arrival require a
-  physical-device test.
-
-HealthBot and plan selection use the server-side Gemini key. If generation is
-unavailable, labeled fallback guidance remains available. New users receive a
-generic starter plan; accounts with activity can receive personalized goals
-and AI-selected activities. Successful weekly plans are cached; saved fallback
-plans retry AI selection on opening. The refresh button explicitly regenerates.
-
-Firebase authentication and Firestore use Firebase directly. HealthBot,
-server-generated plans, remote scheduling, recursive community-post deletion,
-journal deletion/streak cleanup and account deletion also depend on the Python
-backend. A local API running on the original developer's laptop does not become
-available on the recipient's laptop automatically.
-
-## 8. Delivery verification checklist
-
-- [ ] Flutter/Android SDK paths belong to the recipient's machine.
-- [ ] A fresh Python environment installs successfully.
-- [ ] Mobile Firebase JSON, Dart options and backend Admin credentials use the same project.
-- [ ] Recipient debug fingerprints are registered under the correct Android package.
-- [ ] Email/password and Google login work on the recipient's phone.
-- [ ] The configured phone OTP route delivers/verifies a real or explicitly configured test OTP.
-- [ ] Firestore rules are deployed and required indexes are READY.
-- [ ] Backend health returns OK and the phone can reach the API.
-- [ ] A new HealthBot query returns a generated answer or an accurately labeled fallback.
-- [ ] A new account sees a starter plan; an account with activity can refresh its personalized plan.
-- [ ] Editing baseline daily usage updates today's/future reduction targets.
-- [ ] Journal edit/delete, community create/delete and profile save show completion feedback.
-- [ ] Turning reminders on/off finishes and reflects the saved state.
-- [ ] Local reminder and real FCM arrival are verified on the target phone.
-- [ ] Logout/account deletion and per-account data separation are verified.
-
-Run automated checks from `mobile/`:
+## Testing and Verification
 
 ```powershell
+# from mobile/
 flutter analyze --no-pub
 flutter test --no-pub
-```
 
-From `backend/`:
-
-```powershell
+# from backend/
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Automated tests use test doubles and do not prove live Google, OTP, Gemini or FCM
-delivery. Historical test counts in older documents are not a substitute for
-running the delivered version on the recipient's environment.
-
-## 9. Deployment, research and delivery limits
-
-The current running setup is a **local Android development/demo setup**.
-Public HTTPS backend deployment was deferred. Without it, backend features and
-scheduled pushes require the recipient's machine/worker to stay running.
-Release Android builds disallow cleartext HTTP, so the USB HTTP command is for
-debug builds; release delivery needs an HTTPS backend and release signing.
-
-`deploy/` contains Docker/API/worker/TLS templates. Before using them, configure
-the recipient's domain, secret paths, environment and actual review record.
-Their presence does not mean a public production deployment has been verified.
-
-The default relapse-risk mode is `ml`, using the packaged experimental XGBoost
-pipeline. It is not independently validated for the app population. Authorized
-PATH data and genuine medical-advisor review remain external work. Research data
-and bulk model outputs are excluded from source delivery; the active inference
-artifact is included under `backend/app/relapse/model_artifacts/`. Training is
-not required to run it. See `docs/ML_INTEGRATION.md` for evaluation limits.
-
-For a source archive, include source, tests, assets, lockfiles, configuration
-templates and documentation. Exclude real `.env` files, Admin keys, private
-keystores, `.venv/`, `.runtime/`, logs, Flutter build/cache folders and temporary
-tool dependencies. Transfer authorized credentials separately. A copied folder
-can contain ignored files even when Git excludes them, so inspect the archive.
-
-## 10. Project layout and supporting documentation
-
-| Folder | Purpose |
+| Suite | Result |
 | --- | --- |
-| `mobile/lib/app/` | App composition/navigation |
-| `mobile/lib/core/` | Firebase/backend configuration and theme |
-| `mobile/lib/features/` | Feature controllers, repositories, models and screens |
-| `mobile/lib/shared/` | Shared clients, utilities and widgets |
-| `mobile/test/` | Flutter tests |
-| `backend/app/` | API routes, services and worker |
-| `backend/tools/` | Service supervision, indexes and benchmarking |
-| `backend/ml/` | Research dataset/training/evaluation tools |
-| `backend/tests/` | Backend tests |
-| `deploy/` | Deployment templates |
-| `docs/` | Audits, implementation history and research records |
+| Backend (pytest) | **237 passed, 5 skipped**, re-run while preparing this README (November 2026) |
+| Flutter | **543 passed**, as recorded in the [completion record](docs/ANDROID_COMPLETION.md) |
+| Dart analysis | No errors, as recorded in the completion record |
+| Android debug APK | Built successfully, as recorded in the completion record |
 
-This README is the handover setup guide. Historical audits may describe earlier
-behavior. Additional references:
-[mobile guide](mobile/README.md),
-[backend guide](backend/README.md),
-[completion record](docs/ANDROID_COMPLETION.md),
-[documentation index](docs/README.md).
+Automated tests use fake services. They verify the application logic but do **not** prove that live Google sign-in, WhatsApp OTP, Gemini or FCM delivery work. Those still need checks on a physical device; the [setup guide](docs/SETUP_GUIDE.md#8-delivery-verification-checklist) has the checklist.
 
-## ML relapse scoring
+## Current Implementation and Deployment Status
 
-The backend now defaults to `RELAPSE_PREDICTOR_MODE=ml`, using the packaged
-XGBoost pipeline in `backend/app/relapse/model_artifacts/app_candidate.joblib`.
-Install `backend/requirements.txt` and restart both API and worker after changing
-the mode. The artifact is included in source delivery; training data is not needed
-to run inference. See [ML integration](docs/ML_INTEGRATION.md) for provenance,
-missing-answer handling, evaluation limits and reproduction.
+| Item | Status |
+| --- | --- |
+| Android app (all modules) | Implemented; runs as a local development/demo build |
+| FastAPI backend and worker | Implemented; run locally (USB forwarding or emulator) |
+| Docker / Compose / Caddy templates | Provided; container build and public HTTPS deployment **not verified** |
+| Public backend hosting | **Not set up.** Backend features need a locally running backend |
+| Release signing | Not configured; release builds still use debug signing |
+| iOS | Not included (no iOS target generated) |
+| Clinical review of health content | Not performed; the production review gate stays off without a genuine record |
+| Relapse-risk model | Experimental; not clinically or prospectively validated |
+| Live FCM delivery and 4G latency targets | Not measured on a representative device fleet or network |
+
+## Privacy and Security
+
+- **Per-user isolation:** Firestore rules let a signed-in user read and write only their own documents.
+- **Verified identity:** the backend verifies Firebase ID tokens on protected endpoints and fails closed when credentials are missing.
+- **Secrets stay on the server:** Gemini, WhatsApp and Firebase Admin credentials live only in the backend environment. `.env` files and service-account keys are git-ignored.
+- **Encrypted local storage:** offline craving logs use an encrypted per-account outbox, and fingerprint sign-in uses Android encrypted secure storage. Android backup is disabled.
+- **Health-Bot safeguards:** phone numbers and email addresses are removed before a query is sent or stored. The disclaimer states that messages go to Google Gemini and are saved to the user's history.
+- **Anonymity:** community posts show a generated handle, never the user's name or email.
+- **Consent and deletion:** explicit consent is required, research export is a separate opt-in that excludes names, email, chat and notes, and `DELETE /account` erases the user's data, authored posts, likes and replies, and sign-in account.
+- **Transport:** release builds disallow cleartext HTTP. Plain-HTTP localhost is for debug USB builds only.
+
+## Future Improvements
+
+- Generate and test the Flutter iOS target with APNs.
+- Formal review of health content by a qualified medical advisor.
+- Train on authorised PATH data and validate any model prospectively before relying on it.
+- Host the backend publicly on HTTPS with a domain, and configure release signing.
+- Measure real FCM delivery and network latency on representative devices.
+- Expand content, add languages (including Urdu), and strengthen community moderation.
+
+## Contributors and Supervisor
+
+| Name | Registration No. | Main responsibilities |
+| --- | --- | --- |
+| **Sukaina Ayesha** | SP23-BCS-071 | Onboarding & profiling, dashboard & analytics, habit & trigger tracking, alternatives & habit replacement, relapse prevention & reflection |
+| **Mehreen Ali** | SP23-BCS-084 | Health-Bot, gamification & rewards, community & peer support, Knowledge Hub |
+
+Authentication, notifications, the FastAPI backend, security rules, deployment templates and testing were completed jointly.
+
+**Supervisor:** Ms. Beenish Noor, Department of Computer Sciences, COMSATS University Islamabad, Wah Campus. Session 2023–2027.
+
+## Documentation and References
+
+**Project documentation**
+
+- [Detailed setup and handover guide](docs/SETUP_GUIDE.md)
+- [Android and backend completion record](docs/ANDROID_COMPLETION.md)
+- [ML integration](docs/ML_INTEGRATION.md) and [ML pipeline](backend/ml/README.md)
+- [WhatsApp phone sign-in setup](docs/WHATSAPP_SETUP.md)
+- [Backend guide](backend/README.md) and [mobile guide](mobile/README.md)
+- [Clinical review record template](deploy/reviews/README.md)
+- [Documentation index](docs/README.md)
+
+**External references**
+
+- EMASENS_ML dataset, Perski et al.: <https://doi.org/10.5281/zenodo.10472386>
+- CDC, tips for quitting: <https://www.cdc.gov/tobacco/campaign/tips/quit-smoking/tips-for-quitting/index.html>
+- National Cancer Institute, tobacco withdrawal fact sheet: <https://www.cancer.gov/about-cancer/causes-prevention/risk/tobacco/withdrawal-fact-sheet>
+- [Flutter](https://flutter.dev/) · [Firebase](https://firebase.google.com/) · [FastAPI](https://fastapi.tiangolo.com/) · [XGBoost](https://xgboost.readthedocs.io/) · [scikit-learn](https://scikit-learn.org/) · [Gemini API](https://ai.google.dev/gemini-api/docs) · [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api)
+
+---
+
+<sub>Quit Companion is a student project for research and education. It does not replace professional medical advice, diagnosis or treatment.</sub>
