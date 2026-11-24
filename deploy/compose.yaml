@@ -1,7 +1,16 @@
+# Docker keeps container logs forever by default, which slowly fills a small
+# cloud server's disk. Every service rotates at 10 MB x 5 files (<= 150 MB total).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   backend:
     build: ../backend
     restart: unless-stopped
+    logging: *default-logging
     env_file: .env
     environment:
       FIREBASE_SERVICE_ACCOUNT_JSON: /run/secrets/firebase.json
@@ -14,8 +23,16 @@ services:
     build: ../backend
     command: ["python", "-m", "app.worker"]
     restart: unless-stopped
+    logging: *default-logging
+    # Step 12: the worker touches a heartbeat file after every pass
+    # (app/worker.py). Unhealthy if it hasn't for 3 minutes (passes are
+    # 5-45 s apart), so a hung worker is visible in `docker compose ps`.
     healthcheck:
-      disable: true
+      test: ["CMD", "python", "-c", "import os,sys,time; p='/tmp/quit-companion-worker.heartbeat'; sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p) < 180 else 1)"]
+      interval: 60s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
     env_file: .env
     environment:
       FIREBASE_SERVICE_ACCOUNT_JSON: /run/secrets/firebase.json
@@ -28,14 +45,19 @@ services:
   proxy:
     image: caddy:2
     restart: unless-stopped
+    logging: *default-logging
     environment:
       SITE_DOMAIN: ${SITE_DOMAIN:-localhost}
     ports: ["80:80", "443:443"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # caddy_data holds the Let's Encrypt certificate and account: keeping it
+      # across restarts/redeploys avoids re-issuing (and CA rate limits).
       - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       backend:
         condition: service_healthy
 volumes:
   caddy_data:
+  caddy_config:

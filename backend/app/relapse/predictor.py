@@ -1,7 +1,19 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from .model_loader import CravingLogCompatibleModel
 from .service import RiskLevel, predict_relapse_risk
+
+#: The packaged artifact, resolved from this file (not the working
+#: directory), so it loads the same way locally, in tests and in Docker.
+PACKAGED_CANDIDATE_PATH = (
+    Path(__file__).resolve().parent / "model_artifacts" / "app_candidate.joblib"
+)
+
+
+class PredictionModelError(RuntimeError):
+    """The model itself failed (not the caller's input). Kept separate from
+    ValueError so the API never reports a model fault as a bad request."""
 
 
 class RelapsePredictor(ABC):
@@ -45,12 +57,21 @@ class CandidatePredictor(RelapsePredictor):
         import json
         import joblib
 
-        path = Path(artifact_path) if artifact_path else Path(__file__).parent / "model_artifacts/app_candidate.joblib"
+        path = Path(artifact_path) if artifact_path else PACKAGED_CANDIDATE_PATH
         metadata = json.loads(path.with_name("app_candidate_metadata.json").read_text())
         if hashlib.sha256(path.read_bytes()).hexdigest() != metadata["sha256"]:
             raise ValueError("ML artifact checksum does not match its metadata")
         self.bundle = joblib.load(path)
+        self.artifact_path = path
         self.model_version = metadata["model_version"]
+        if not isinstance(self.bundle, dict) or not {"estimator", "columns", "thresholds"} <= set(self.bundle):
+            raise ValueError("ML artifact is missing its estimator, columns or thresholds")
+        if not hasattr(self.bundle["estimator"], "predict_proba"):
+            raise ValueError("ML artifact estimator cannot produce probabilities")
+        # The feature order is part of the model: it must match what the
+        # artifact was trained and documented with.
+        if list(self.bundle["columns"]) != list(metadata["selected"]["columns"]):
+            raise ValueError("ML artifact feature columns do not match its metadata")
         low = self.bundle["thresholds"]["low_threshold"]
         high = self.bundle["thresholds"]["high_threshold"]
         if not 0 <= low < high <= 1:
@@ -85,9 +106,12 @@ class CandidatePredictor(RelapsePredictor):
         values = self.feature_values(**kwargs)
         row = np.asarray([[values.get(name) if values.get(name) is not None else np.nan
                            for name in self.bundle["columns"]]], dtype=float)
-        probability = float(self.bundle["estimator"].predict_proba(row)[0, 1])
+        try:
+            probability = float(self.bundle["estimator"].predict_proba(row)[0, 1])
+        except Exception as error:  # estimator internals; input is already validated
+            raise PredictionModelError("ML model failed to produce a prediction") from error
         if not math.isfinite(probability) or not 0 <= probability <= 1:
-            raise ValueError("ML model returned an invalid probability")
+            raise PredictionModelError("ML model returned an invalid probability")
         return probability
 
     def predict(self, **kwargs):

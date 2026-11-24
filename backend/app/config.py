@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # Never expose these values through the mobile app or a client response.
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
+    # FR8 2-second response target: total budget for one Gemini call before
+    # the curated fallback is returned instead.
+    healthbot_gemini_timeout_seconds: float = 1.5
     clinical_review_record: str | None = None
     require_clinical_review: bool = False
     worker_poll_seconds: int = 30
@@ -43,6 +46,15 @@ class Settings(BaseSettings):
     # "ml" runs the packaged experimental XGBoost pipeline. "rule_based"
     # remains an explicit alternative. Legacy "model" is the old research RF.
     relapse_predictor_mode: Literal["rule_based", "model", "candidate", "ml"] = "ml"
+    # FR5 deployment: optional absolute path to app_candidate.joblib for
+    # deployments that mount the artifact (its app_candidate_metadata.json
+    # must sit beside it). Unset = the copy packaged in app/relapse/
+    # model_artifacts/, resolved relative to the code, not the working dir.
+    relapse_model_path: str | None = None
+    # If the ML artifact can't be loaded: False (default) logs an error and
+    # serves the rule-based predictor so the rest of the API stays up; True
+    # refuses to start, for deployments that must never run without ML.
+    relapse_model_required: bool = False
 
 
 settings = Settings()

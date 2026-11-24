@@ -25,6 +25,13 @@ class CoachingContext:
                 "cravings": [doc.to_dict() for doc in user.collection("cravingLogs").order_by("timestamp", direction="DESCENDING").limit(100).stream()],
                 "usage": [doc.to_dict() for doc in user.collection("usageLogs").order_by("date", direction="DESCENDING").limit(100).stream()]}
 
+    def read_attempts(self, uid: str) -> list[dict]:
+        """Step 13: /recommend/alternative ranks attempts only, so it reads just
+        that one collection instead of all four datasets read() loads."""
+        user = self.database().collection("nicotineUsers").document(uid)
+        return [doc.to_dict() for doc in user.collection("habitAlternativeAttempts")
+                .order_by("attemptedAt", direction="DESCENDING").limit(500).stream()]
+
     def save_plan(self, uid: str, kind: str, plan: dict):
         self.database().collection("nicotineUsers").document(uid).collection("generatedPlans").document(kind).set(plan)
 
@@ -43,10 +50,12 @@ async def recommend(body: CoachingRequest, uid: str = Depends(require_firebase_u
     if settings.require_clinical_review and review_status(settings.clinical_review_record) != "approved_catalogue":
         raise HTTPException(503, "Coaching content is awaiting clinical-advisor review.")
     try:
-        data = await run_in_threadpool(context.read, uid)
+        read_attempts = getattr(context, "read_attempts", None)
+        attempts = (await run_in_threadpool(read_attempts, uid) if read_attempts
+                    else (await run_in_threadpool(context.read, uid))["attempts"])
     except Exception as exc:
         raise HTTPException(503, "Could not load your coaching history.") from exc
-    return {"recommendations": rank_actions(data["attempts"], body.trigger_category, body.mood)[:5],
+    return {"recommendations": rank_actions(attempts, body.trigger_category, body.mood)[:5],
             "model": "contextual_beta_bernoulli", "medical_review_status": "pending"}
 
 

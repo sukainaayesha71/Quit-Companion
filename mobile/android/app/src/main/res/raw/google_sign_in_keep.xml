@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Keep the OAuth Web client ID generated from google-services.json.
+
+  google_sign_in_android 7.x (Credential Manager) needs it as serverClientId and
+  reads it at runtime with getIdentifier("default_web_client_id"). The release
+  resource shrinker can't see that lookup, so it removed the string ("is not
+  reachable" in build/app/outputs/mapping/release/resources.txt) and Google
+  sign-in failed with "serverClientId must be provided on Android".
+  The google-services plugin's own keep file doesn't list this string.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/default_web_client_id" />

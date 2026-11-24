@@ -1,0 +1,4 @@
+# Shell scripts run on Linux (AWS CloudShell and the EC2 server). Keep LF line
+# endings even on Windows checkouts with core.autocrlf=true, or bash fails
+# with "$'\r': command not found".
+*.sh text eol=lf

@@ -36,7 +36,14 @@ def readiness():
     ready = bool(settings.firebase_service_account_json)
     if settings.require_clinical_review:
         ready = ready and review_status(settings.clinical_review_record) == "approved_catalogue"
-    return JSONResponse(status_code=200 if ready else 503, content={"ready": ready})
+    from .dependencies import relapse_predictor_status
+    # FR5: which relapse predictor is serving (no paths or secrets). A
+    # rule-based fallback doesn't make the API unready unless
+    # RELAPSE_MODEL_REQUIRED is set, in which case startup fails instead.
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={"ready": ready, "relapse_predictor": dict(relapse_predictor_status)},
+    )
 
 
 @app.get("/health")

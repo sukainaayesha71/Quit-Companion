@@ -282,12 +282,14 @@ flutter test --no-pub
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-| Suite | Result |
+| Suite | Result (re-run 2026-11-23) |
 | --- | --- |
-| Backend (pytest) | **237 passed, 5 skipped**, re-run while preparing this README (November 2026) |
-| Flutter | **543 passed**, as recorded in the [completion record](docs/ANDROID_COMPLETION.md) |
-| Dart analysis | No errors, as recorded in the completion record |
-| Android debug APK | Built successfully, as recorded in the completion record |
+| Flutter (`flutter test`, all 119 test files) | **805 passed, 0 failed, 0 skipped** |
+| Dart analysis (`flutter analyze`) | No issues |
+| Backend (`pytest`, incl. worker and ML tests) | **305 passed, 0 failed, 0 skipped** (training-only `pandas`/`pyreadr` installed in the dev venv) |
+| Firestore rules (`mobile/test/firestore_rules`, local emulator) | **13 passed, 0 failed** |
+| Android debug APK | Built (`mobile/build/app/outputs/flutter-apk/app-debug.apk`, USB-demo backend URL); installs and starts on the Pixel_6 **emulator** (welcome and Log In screens). Not yet verified on a physical phone |
+| Android release APK | **Not built**: needs the production HTTPS URL (release builds refuse HTTP by design) |
 
 Automated tests use fake services. They verify the application logic but do **not** prove that live Google sign-in, WhatsApp OTP, Gemini or FCM delivery work. Those still need checks on a physical device; the [setup guide](docs/SETUP_GUIDE.md#8-delivery-verification-checklist) has the checklist.
 
@@ -295,15 +297,19 @@ Automated tests use fake services. They verify the application logic but do **no
 
 | Item | Status |
 | --- | --- |
-| Android app (all modules) | Implemented; runs as a local development/demo build |
-| FastAPI backend and worker | Implemented; run locally (USB forwarding or emulator) |
-| Docker / Compose / Caddy templates | Provided; container build and public HTTPS deployment **not verified** |
-| Public backend hosting | **Not set up.** Backend features need a locally running backend |
-| Release signing | Not configured; release builds still use debug signing |
-| iOS | Not included (no iOS target generated) |
-| Clinical review of health content | Not performed; the production review gate stays off without a genuine record |
-| Relapse-risk model | Experimental; not clinically or prospectively validated |
-| Live FCM delivery and 4G latency targets | Not measured on a representative device fleet or network |
+| Android app (all modules) | Implemented and tested (automated); demo build runs with a local backend over USB. Physical-phone verification pending |
+| FastAPI backend and worker | Implemented and tested locally; worker heartbeat/healthcheck and preflight tool added |
+| Docker / Compose / Caddy templates | Prepared; image build and public HTTPS deployment **not performed** (no server/domain yet) |
+| Public backend hosting | **Not set up.** Backend features need the local backend (USB) until deployed |
+| Release signing | `android/key.properties` supported; no release keystore created yet (debug-key fallback with warning) |
+| HTTPS | Release builds blocked unless the backend URL is `https://`; release manifest blocks cleartext |
+| Notifications | FCM push is the default for daily check-ins, with on-device fallback; live FCM delivery not yet tested |
+| iOS | Not delivered: no iOS project exists in the repository |
+| Clinical review of health content | Not performed; no advisor approval record exists |
+| Relapse-risk model | Experimental; not clinically or prospectively validated. Production mode (`ml` vs `rule_based`) is an open owner decision |
+| Latency targets | Local/simulated measurements only (Step 13); real-device, 4G and FCM timings not measured |
+
+Final status per SRDS item: [docs/FINAL_IMPLEMENTATION_STATUS.md](docs/FINAL_IMPLEMENTATION_STATUS.md) (Table 4.3). Run, deploy and phone-check instructions: [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md).
 
 ## Privacy and Security
 

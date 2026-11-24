@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, replace
 from enum import Enum
 import json
 import logging
@@ -19,10 +20,30 @@ class AnswerType(str, Enum):
     UNMATCHED = "unmatched"
 
 
+class AnswerSource(str, Enum):
+    """Where the answer text came from, so the app never presents curated
+    or rule-based text as AI-generated."""
+
+    AI = "ai"  # Gemini-generated reply
+    CURATED = "curated"  # reviewed knowledge-base text
+    SAFETY = "safety"  # emergency referral or medication guard
+
+
+class FallbackReason(str, Enum):
+    """Why a curated answer replaced the Gemini reply. Machine-readable:
+    the app turns it into a friendly note, never raw text."""
+
+    TIMEOUT = "timeout"
+    UNAVAILABLE = "unavailable"
+
+
 @dataclass(frozen=True)
 class HealthBotAnswer:
     type: AnswerType
     response_text: str
+    # Conservative default: anything not explicitly from Gemini is curated.
+    source: AnswerSource = AnswerSource.CURATED
+    fallback_reason: FallbackReason | None = None
 
 
 UNMATCHED_FALLBACK_TEXT = "I cannot answer this confidently. Please consult a doctor."
@@ -353,15 +374,33 @@ HEALTHBOT_UNAVAILABLE_TEXT = "Health-Bot is temporarily unavailable. Please try 
 _ALLOWED_ANSWER_TYPES = {answer_type.value for answer_type in AnswerType}
 
 
-def _fallback_answer(query: str) -> HealthBotAnswer:
-    answer = answer_query(query)
-    return HealthBotAnswer(
-        type=answer.type,
-        response_text="AI responses are unavailable. General guidance: " + answer.response_text,
-    )
+#: FR8 2-second target: total budget for one Gemini call. Anything slower
+#: is abandoned in favour of the curated answer, so the user is never left
+#: waiting on the model. Overridable via settings.healthbot_gemini_timeout_seconds.
+DEFAULT_GEMINI_TIMEOUT_SECONDS = 1.5
+
+_MEDICATION_REFUSAL_TEXT = (
+    "I cannot recommend medications, dosages, or treatments. Please discuss "
+    "those questions with a qualified clinician or pharmacist."
+)
 
 
-async def _request_gemini_answer(query: str, *, api_key: str, model: str) -> HealthBotAnswer:
+def _fallback_answer(query: str, reason: FallbackReason = FallbackReason.UNAVAILABLE) -> HealthBotAnswer:
+    """Curated knowledge-base answer used when Gemini can't answer.
+
+    The text stays clean (no technical prefix); `source` and
+    `fallback_reason` let the app label it honestly.
+    """
+    return replace(answer_query(query), fallback_reason=reason)
+
+
+async def _request_gemini_answer(
+    query: str,
+    *,
+    api_key: str,
+    model: str,
+    timeout_seconds: float = DEFAULT_GEMINI_TIMEOUT_SECONDS,
+) -> HealthBotAnswer:
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     response_schema = {
         "type": "OBJECT",
@@ -374,9 +413,11 @@ async def _request_gemini_answer(query: str, *, api_key: str, model: str) -> Hea
     relevant = [response for _, keywords, response in KNOWLEDGE_BASE
                 if any(keyword in query.lower() for keyword in keywords)][:3]
     evidence = relevant or ["Stay within general nicotine-cessation support. Ask a clinician about symptoms you cannot answer from this evidence."]
+    from .sources import sources_for_query  # local import: sources imports this module
+
+    references = "; ".join(source.url for source in sources_for_query(query))
     grounding = (" Use only the following curated evidence excerpts for factual guidance: " + json.dumps(evidence)
-                 + ". Source reference: https://www.cdc.gov/tobacco/campaign/tips/quit-smoking/tips-for-quitting/index.html"
-                 + "; https://www.cancer.gov/about-cancer/causes-prevention/risk/tobacco/withdrawal-fact-sheet ."
+                 + ". Source reference: " + references + " ."
                  + " Do not add medical claims absent from the excerpts. If evidence is insufficient, say so and recommend a clinician.")
     request_body = {
         "systemInstruction": {
@@ -408,7 +449,7 @@ async def _request_gemini_answer(query: str, *, api_key: str, model: str) -> Hea
             "responseSchema": response_schema,
         },
     }
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
         response = await client.post(
             endpoint,
             headers={"x-goog-api-key": api_key},
@@ -426,7 +467,8 @@ async def _request_gemini_answer(query: str, *, api_key: str, model: str) -> Hea
         raise ValueError("Invalid answer type")
     if not isinstance(response_text, str) or not response_text.strip() or len(response_text) > 1600:
         raise ValueError("Invalid response text")
-    return HealthBotAnswer(type=AnswerType(answer_type), response_text=response_text.strip())
+    return HealthBotAnswer(type=AnswerType(answer_type), response_text=response_text.strip(),
+                           source=AnswerSource.AI)
 
 
 async def answer_query_with_gemini(
@@ -434,44 +476,60 @@ async def answer_query_with_gemini(
     *,
     api_key: str | None,
     model: str = "gemini-3.5-flash-lite",
+    timeout_seconds: float = DEFAULT_GEMINI_TIMEOUT_SECONDS,
 ) -> HealthBotAnswer:
     """Generate a short, contextual reply with Gemini after local emergency checks."""
     lowered = query.lower()
     for keyword in EMERGENCY_KEYWORDS:
         if keyword in lowered:
-            return HealthBotAnswer(type=AnswerType.EMERGENCY, response_text=EMERGENCY_RESPONSE_TEXT)
+            return HealthBotAnswer(type=AnswerType.EMERGENCY, response_text=EMERGENCY_RESPONSE_TEXT,
+                                   source=AnswerSource.SAFETY)
 
     if re.search(r"\b(medication|medicine|dosage|dose|prescribe|milligram|patch|varenicline|bupropion)\b", lowered):
-        return HealthBotAnswer(type=AnswerType.UNMATCHED,
-            response_text="I cannot recommend medications, dosages, or treatments. Please discuss those questions with a qualified clinician or pharmacist.")
+        return HealthBotAnswer(type=AnswerType.UNMATCHED, response_text=_MEDICATION_REFUSAL_TEXT,
+                               source=AnswerSource.SAFETY)
 
     if not api_key or not api_key.strip():
         _logger.error("Health-Bot Gemini is not configured")
-        return _fallback_answer(query)
+        return _fallback_answer(query, FallbackReason.UNAVAILABLE)
 
     try:
-        answer = await _request_gemini_answer(query, api_key=api_key, model=model)
+        # httpx timeouts apply per phase (connect/read/...), so the total is
+        # capped separately: a slow-but-trickling response can't exceed it.
+        answer = await asyncio.wait_for(
+            _request_gemini_answer(
+                query,
+                api_key=api_key,
+                model=model,
+                timeout_seconds=timeout_seconds,
+            ),
+            timeout=timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        _logger.warning("Health-Bot Gemini exceeded the %.1fs budget", timeout_seconds)
+        return _fallback_answer(query, FallbackReason.TIMEOUT)
     except httpx.HTTPStatusError as error:
         _logger.warning(
             "Health-Bot Gemini returned HTTP %s",
             error.response.status_code,
         )
-        return _fallback_answer(query)
+        return _fallback_answer(query, FallbackReason.UNAVAILABLE)
     except httpx.TimeoutException:
         _logger.warning("Health-Bot Gemini request timed out")
-        return _fallback_answer(query)
+        return _fallback_answer(query, FallbackReason.TIMEOUT)
     except httpx.RequestError:
         _logger.warning("Health-Bot Gemini network request failed")
-        return _fallback_answer(query)
+        return _fallback_answer(query, FallbackReason.UNAVAILABLE)
     except (ValueError, KeyError, IndexError, TypeError):
         _logger.warning("Health-Bot Gemini returned an invalid response")
-        return _fallback_answer(query)
+        return _fallback_answer(query, FallbackReason.UNAVAILABLE)
 
     if answer.type == AnswerType.EMERGENCY:
-        return HealthBotAnswer(type=AnswerType.EMERGENCY, response_text=EMERGENCY_RESPONSE_TEXT)
+        return HealthBotAnswer(type=AnswerType.EMERGENCY, response_text=EMERGENCY_RESPONSE_TEXT,
+                               source=AnswerSource.SAFETY)
     if re.search(r"\b(\d+\s*mg|milligram|varenicline|bupropion|you should take|take a dose|nicotine patch)\b", answer.response_text, flags=re.I):
-        return HealthBotAnswer(type=AnswerType.UNMATCHED,
-            response_text="I cannot recommend medications, dosages, or treatments. Please discuss those questions with a qualified clinician or pharmacist.")
+        return HealthBotAnswer(type=AnswerType.UNMATCHED, response_text=_MEDICATION_REFUSAL_TEXT,
+                               source=AnswerSource.SAFETY)
     return answer
 
 
@@ -488,7 +546,8 @@ def answer_query(query: str) -> HealthBotAnswer:
 
     for keyword in EMERGENCY_KEYWORDS:
         if keyword in lowered:
-            return HealthBotAnswer(type=AnswerType.EMERGENCY, response_text=EMERGENCY_RESPONSE_TEXT)
+            return HealthBotAnswer(type=AnswerType.EMERGENCY, response_text=EMERGENCY_RESPONSE_TEXT,
+                                   source=AnswerSource.SAFETY)
 
     for _topic, keywords, response_text in KNOWLEDGE_BASE:
         for keyword in keywords:

@@ -79,7 +79,21 @@ New: `lib/models/badge.dart`, `lib/data/badge_repository.dart` (+fake/firestore)
 
 ## Step 9 — What is still explicitly NOT done
 
-- **No in-app "Congratulatory Pop-up"** when a badge is newly earned — `newlyEarnedBadgeTypes` is computed and exposed by the controller but `RewardsScreen` doesn't currently render a distinct celebratory dialog/toast for it, only the up-to-date badge grid (Step 4, decision 5).
+- ~~No in-app "Congratulatory Pop-up"~~ — **RESOLVED 2026-11-23 (FR9 / UC7):** `GamificationController` now keeps a one-time celebration queue (`pendingCelebrations` / `takeNextCelebration()`), filled only after a badge is successfully saved and deduplicated by badge type per user per session. `BadgeCelebrationListener` (mounted on both `DashboardScreen` and `RewardsScreen`) shows `BadgeCelebrationDialog` for each queued badge in turn, and only when its own route is on top, so a badge is never celebrated twice. Badges earned in earlier sessions are not re-celebrated. Known limit: the queue lives in memory, so if the app is killed after a badge is saved but before its pop-up is shown, that pop-up is skipped (the badge, points and history are still correct).
 - **No FCM push notification** on badge earn — same exclusion every prior module applied (no `firebase_messaging` dependency in this repo).
 - **No "Milestones" checklist section on `RewardsScreen`** — the approved mockup shows one, but it duplicates Module 2's existing Dashboard milestone-progress card content; judged as not worth a second rendering this pass (Step 4, decision 4).
 - **Physical-device verification and Firestore rules deployment** — as above.
+
+## FR9 / UC7 badge celebration pop-up — PENDING VERIFICATION (2026-11-23)
+
+> **RESOLVED 2026-11-23** — both test issues fixed and verified (complete suite 805 passed, 0 failed, 0 skipped). See `2026-11-23-step2-badge-popup-fix-record.md`. Device verification is still manual. The original notes below are kept for history.
+
+Implemented (see resolved item above), but **not fully verified**. Open items:
+
+1. **`test/responsive_screens_test.dart` — `portrait 320x640 text 1.5: dashboard` hangs.** In the full-suite run it stalled for 16+ minutes at 100% of one CPU core with no output and was stopped manually. All 19 text-scale-1.0 cases passed after the pop-up dismissal loop was added. Probable causes (not yet confirmed): the unbounded `while (continue button visible) tap(...)` dismissal loop never ends at 1.5x text, or `pumpAndSettle` never settles. Fix to apply: bound the loop, `ensureVisible` the continue button before tapping, then rerun that file alone.
+2. **Possible small-screen layout issue in `BadgeCelebrationDialog`.** On a 320x640 screen at 1.5x text, the dialog may be taller than the viewport, which would push the continue button out of view (the content scrolls, but this is unconfirmed). If confirmed, tighten the dialog layout (smaller trophy/spacing, or pin the button outside the scroll area).
+3. **`test/app_flow_test.dart` — "deleting an account returns to the welcome screen" fails** with `Bad state: No element` at `ensureVisible(profile_row_privacy_security)` (line 237). The test user is nicotine-free, so the pop-up covers the Dashboard. The test needs to dismiss the celebration pop-up(s) first.
+4. **Full-suite result for this change is not yet available.** Last partial run: 643 passed, 1 failed (item 3) before the hang (item 1). The remaining text-1.5 responsive cases and any later test files have not been run.
+5. **Android device verification pending:** earn a badge (e.g. Quit Day yesterday), confirm the pop-up shows once on the Dashboard, does not reappear on Rewards or after reopening, and fits on a small screen with large system font.
+
+Passing: rewards tests (29), dashboard/profile tests, `flutter analyze` clean.

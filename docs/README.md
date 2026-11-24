@@ -1,5 +1,9 @@
 # Documentation guide
 
+- [Final implementation status](FINAL_IMPLEMENTATION_STATUS.md): Table 4.3
+  (final implementation status per SRDS item) with an evidence check of each
+  row and the remaining manual checks.
+
 - [Android and backend completion](ANDROID_COMPLETION.md): current implementation
   record, runtime instructions, ML limitations and external release criteria.
 - [Feature audit](FEATURE_AUDIT.md): original feature inventory; the completion

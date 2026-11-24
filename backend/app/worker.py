@@ -13,9 +13,20 @@ from zoneinfo import ZoneInfo
 from .config import settings
 from .coaching.router import CoachingContext
 from .dependencies import get_fcm_notification_service, get_relapse_predictor
-from .relapse.predictor import CandidatePredictor
+from .relapse.predictor import CandidatePredictor, RuleBasedPredictor
 
 logger = logging.getLogger(__name__)
+
+
+def assessment_source(predictor) -> str:
+    """Label stored with a re-scored craving: what actually scored it, not
+    what was configured (the API may have fallen back to rule-based if the
+    ML artifact failed to load)."""
+    if isinstance(predictor, CandidatePredictor):
+        return "machine_learning"
+    if isinstance(predictor, RuleBasedPredictor):
+        return "rule_based"
+    return settings.relapse_predictor_mode
 
 
 def due_slots(schedule: dict, now: datetime) -> list[tuple[str, str]]:
@@ -67,8 +78,8 @@ class Worker:
                         receipt.set({"sent": True, "sentAt": now, "succeeded": result.succeeded}, merge=True)
                     else:
                         receipt.set({"leaseUntil": now}, merge=True)
-            except Exception:
-                logger.warning("Scheduled delivery failed; no user content logged")
+            except Exception as error:
+                logger.warning("Scheduled delivery failed (%s); no user content logged", type(error).__name__)
 
     def pending_assessments(self):
         for doc in self.db.collection_group("cravingLogs").where("riskAssessmentPending", "==", True).limit(100).stream():
@@ -87,15 +98,15 @@ class Worker:
                     **({"recovery_context": data.get("recoveryContext", {})} if isinstance(self.predictor, CandidatePredictor) else {}))
                 risk = self.predictor.predict(**inputs)
                 result = {"relapseRiskScore": risk.value, "riskAssessmentPending": False,
-                          "assessmentSource": settings.relapse_predictor_mode}
+                          "assessmentSource": assessment_source(self.predictor)}
                 if isinstance(self.predictor, CandidatePredictor):
                     result.update(assessmentSource="machine_learning",
                                   modelVersion=self.predictor.model_version,
                                   imputedFeatures=self.predictor.missing_features(**inputs),
                                   clinicallyValidated=False)
                 doc.reference.update(result)
-            except Exception:
-                logger.warning("Pending assessment deferred; no user content logged")
+            except Exception as error:
+                logger.warning("Pending assessment deferred (%s); no user content logged", type(error).__name__)
 
     def feedback_prompts(self, now):
         for doc in self.db.collection_group("habitAlternativeAttempts").where("outcomeHelped", "==", None).limit(200).stream():
@@ -111,8 +122,8 @@ class Worker:
                 if result.succeeded:
                     doc.reference.update({"feedbackPromptedAt": now})
                     receipt.set({"sent": True, "sentAt": now}, merge=True)
-            except Exception:
-                logger.warning("Activity feedback prompt deferred")
+            except Exception as error:
+                logger.warning("Activity feedback prompt deferred (%s)", type(error).__name__)
 
     def tick(self):
         now = datetime.now(timezone.utc)
@@ -122,18 +133,42 @@ class Worker:
         self.pending_assessments()
 
 
+#: Touched after every pass; deploy/compose.yaml's worker healthcheck
+#: treats a stale file as unhealthy (Step 12).
+HEARTBEAT_FILE = "/tmp/quit-companion-worker.heartbeat"
+
+
+def poll_interval_seconds() -> int:
+    """Clamped to 5-45 s: due_slots() matches a reminder within a 60 s
+    window, so passes must stay under a minute apart."""
+    return max(5, min(settings.worker_poll_seconds, 45))
+
+
+def write_heartbeat(path: str = HEARTBEAT_FILE) -> None:
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(datetime.now(timezone.utc).isoformat())
+    except OSError as error:
+        logger.warning("Could not write worker heartbeat (%s)", type(error).__name__)
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--assessments-only', action='store_true')
+    parser.add_argument('--heartbeat-file', default=HEARTBEAT_FILE)
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     worker = Worker(notifications=not args.assessments_only)
+    logger.info("Worker started (notifications=%s, poll=%ss)", worker.notifications, poll_interval_seconds())
     while True:
         started = time.monotonic()
-        try: worker.tick()
-        except Exception: logger.warning("Background job pass failed; retrying")
-        time.sleep(max(1, max(5, min(settings.worker_poll_seconds, 45)) - (time.monotonic() - started)))
+        try:
+            worker.tick()
+        except Exception as error:
+            logger.warning("Background job pass failed (%s); retrying", type(error).__name__)
+        write_heartbeat(args.heartbeat_file)
+        time.sleep(max(1, poll_interval_seconds() - (time.monotonic() - started)))
 
 
 if __name__ == "__main__": main()

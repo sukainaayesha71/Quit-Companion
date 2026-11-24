@@ -224,6 +224,7 @@ async def test_gemini_generation_request_parses_model_response(monkeypatch: pyte
     assert result == HealthBotAnswer(
         type=AnswerType.MATCHED,
         response_text="A generated response tailored to this question.",
+        source=healthbot.AnswerSource.AI,
     )
     assert captured["url"].endswith("/test-model:generateContent")
     assert captured["headers"] == {"x-goog-api-key": "server-key"}
@@ -238,8 +239,9 @@ async def test_gemini_generation_request_parses_model_response(monkeypatch: pyte
 async def test_gemini_missing_configuration_is_reported(caplog: pytest.LogCaptureFixture) -> None:
     answer = await healthbot.answer_query_with_gemini("headache", api_key=None)
     assert answer.type == AnswerType.MATCHED
-    assert answer.response_text.startswith("AI responses are unavailable. General guidance:")
-    assert healthbot.answer_query("headache").response_text in answer.response_text
+    assert answer.response_text == healthbot.answer_query("headache").response_text
+    assert answer.source == healthbot.AnswerSource.CURATED
+    assert answer.fallback_reason == healthbot.FallbackReason.UNAVAILABLE
 
     assert "not configured" in caplog.text
 

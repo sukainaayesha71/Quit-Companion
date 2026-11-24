@@ -64,7 +64,9 @@ def test_missing_gemini_configuration_returns_labeled_rule_based_fallback(
     assert response.status_code == 200
     body = response.json()
     assert body["answer_type"] == "unmatched"
-    assert body["response_text"].startswith("AI responses are unavailable. General guidance:")
+    assert body["response_text"] == "I cannot answer this confidently. Please consult a doctor."
+    assert body["answer_source"] == "curated"
+    assert body["fallback_reason"] == "unavailable"
 
 
 def test_missing_query_field_is_rejected(client: TestClient, firebase_identity: FakeFirebaseIdentityProvider):

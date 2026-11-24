@@ -117,9 +117,38 @@ service cloud.firestore {
     // uid (prevents posting as someone else); no update/delete rule is
     // granted (neither is built — see the Module 9 implementation
     // record's "not done" section).
+    // FR10 community validation. Applies to CREATE only: existing posts and
+    // replies are never re-validated (rules run on writes), and updates
+    // were already denied (no update rule). Mirrors
+    // lib/features/community/domain/community_post_validator.dart:
+    // non-blank text, at most 2000 characters (project-chosen technical
+    // cap, same as the Health-Bot input limit; the SRDS sets no figure),
+    // exactly the fields the app writes, known category, bounded strings.
+    function validCommunityText(text) {
+      return text is string
+        && text.size() >= 1
+        && text.size() <= 2000
+        && text.matches('(?s).*[^\\s\\x{200B}\\x{200C}\\x{200D}\\x{2060}\\x{FEFF}].*');
+    }
+
+    function validAuthorFields(data) {
+      return data.userId == request.auth.uid
+        && data.anonymizedUsername is string
+        && data.anonymizedUsername.size() >= 1
+        && data.anonymizedUsername.size() <= 60
+        && data.timestamp is string
+        && data.timestamp.size() >= 10
+        && data.timestamp.size() <= 40;
+    }
+
     match /communityPosts/{postId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['userId', 'anonymizedUsername', 'content', 'category', 'timestamp'])
+        && request.resource.data.keys().hasAll(['userId', 'anonymizedUsername', 'content', 'category', 'timestamp'])
+        && validAuthorFields(request.resource.data)
+        && validCommunityText(request.resource.data.content)
+        && request.resource.data.category in ['milestone', 'tip', 'question', 'motivation'];
 
       // likes/{userId} — existence of the doc (keyed by the liking
       // user's own uid) means "this user liked this post." A user may
@@ -133,7 +162,11 @@ service cloud.firestore {
       // the parent post.
       match /replies/{replyId} {
         allow read: if request.auth != null;
-        allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+        allow create: if request.auth != null
+          && request.resource.data.keys().hasOnly(['userId', 'anonymizedUsername', 'content', 'timestamp'])
+          && request.resource.data.keys().hasAll(['userId', 'anonymizedUsername', 'content', 'timestamp'])
+          && validAuthorFields(request.resource.data)
+          && validCommunityText(request.resource.data.content);
       }
     }
 

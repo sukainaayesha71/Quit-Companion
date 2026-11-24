@@ -1,14 +1,18 @@
 from typing import Literal
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from ..dependencies import get_relapse_predictor
 from ..firebase_auth_dependency import require_firebase_uid
-from .predictor import RelapsePredictor, CandidatePredictor
+from .predictor import RelapsePredictor, CandidatePredictor, RuleBasedPredictor
 from .service import RiskLevel
 
 router = APIRouter(tags=["relapse"])
+_logger = logging.getLogger(__name__)
+_rule_based = RuleBasedPredictor()
 
 Mood = Literal["stressed", "bored", "sad", "happy", "social"]
 TriggerCategory = Literal["stress", "afterMeal", "socialPressure", "boredom", "other"]
@@ -85,6 +89,25 @@ async def predict_relapse(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as error:
+        # FR5: a model fault (not bad input) falls back to the SRDS rule
+        # table for this request instead of a 500, and says so in
+        # assessment_source. Same response shape as every other result.
+        if isinstance(predictor, RuleBasedPredictor):
+            raise
+        _logger.error(
+            "Relapse model prediction failed (%s); answered with the rule-based fallback.",
+            error.__class__.__name__,
+        )
+        return PredictRelapseResponse(
+            risk_level=_rule_based.predict(
+                intensity=body.intensity,
+                mood=body.mood,
+                trigger_category=body.trigger_category,
+                last_24h_count=body.last_24h_count,
+            ),
+            assessment_source="rule_based_fallback",
+        )
     is_ml = isinstance(predictor, CandidatePredictor)
     return PredictRelapseResponse(
         risk_level=risk_level,
