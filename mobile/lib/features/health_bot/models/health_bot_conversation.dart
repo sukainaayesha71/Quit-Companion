@@ -24,6 +24,11 @@ class HealthBotConversation {
   /// curated or offline reply as AI-generated. Absent on older records.
   final HealthBotAnswerSource? answerSource;
 
+  /// SDD §6 `sessionId`: the chat (Chat History entry) this exchange belongs
+  /// to. Absent on exchanges saved before chats existed; those are grouped
+  /// by time when read (see health_bot_chats.dart) and never rewritten.
+  final String? sessionId;
+
   const HealthBotConversation({
     required this.conversationId,
     required this.userId,
@@ -34,5 +39,6 @@ class HealthBotConversation {
     this.sources = const [],
     this.note,
     this.answerSource,
+    this.sessionId,
   });
 }

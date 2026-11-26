@@ -35,6 +35,14 @@ class _PendingClient extends FakeHealthBotClient {
 
 class _FailingStore implements HealthBotChatSessionStore {
   @override
+  Future<String?> activeChatId(String userId) async =>
+      throw Exception('storage unavailable');
+
+  @override
+  Future<void> saveActiveChatId(String userId, String chatId) async =>
+      throw Exception('storage unavailable');
+
+  @override
   Future<DateTime?> chatStartedAt(String userId) async =>
       throw Exception('storage unavailable');
 

@@ -20,11 +20,15 @@ class FirestoreHealthBotRepository implements HealthBotRepository {
           .doc(userId)
           .collection('healthBotConversations');
 
+  /// How many of the most recent exchanges are read for the chat and Chat
+  /// History (one document per question and answer).
+  static const historyLimit = 200;
+
   @override
   Future<List<HealthBotConversation>> getConversations(String userId) async {
     final snapshot = await _conversationsFor(
       userId,
-    ).orderBy('timestamp', descending: true).limit(100).get();
+    ).orderBy('timestamp', descending: true).limit(historyLimit).get();
     return snapshot.docs.reversed.map((doc) {
       final data = doc.data();
       return HealthBotConversation(
@@ -42,6 +46,8 @@ class FirestoreHealthBotRepository implements HealthBotRepository {
         // Absent on records saved before source notes existed.
         note: data['note'] as String?,
         answerSource: _parseStoredSource(data['answerSource']),
+        // Absent on exchanges saved before Chat History.
+        sessionId: data['sessionId'] as String?,
       );
     }).toList();
   }
@@ -55,6 +61,8 @@ class FirestoreHealthBotRepository implements HealthBotRepository {
       'botResponse': conversation.botResponse,
       'timestamp': conversation.timestamp.toIso8601String(),
       'isEmergency': conversation.isEmergency,
+      if (conversation.sessionId case final String sessionId)
+        'sessionId': sessionId,
       if (conversation.note case final String note) 'note': note,
       if (conversation.answerSource case final HealthBotAnswerSource source)
         'answerSource': source.name,

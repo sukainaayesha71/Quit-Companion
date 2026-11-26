@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:quit_companion/features/health_bot/data/health_bot_chat_session_store.dart';
 import 'package:quit_companion/features/health_bot/data/health_bot_client.dart';
 import 'package:quit_companion/features/health_bot/data/health_bot_repository.dart';
+import 'package:quit_companion/features/health_bot/domain/health_bot_chats.dart';
 import 'package:quit_companion/features/health_bot/domain/local_health_bot_fallback.dart';
 import 'package:quit_companion/features/health_bot/models/health_bot_conversation.dart';
 import 'package:quit_companion/features/health_bot/models/health_bot_message.dart';
@@ -29,7 +31,7 @@ class HealthBotController extends ChangeNotifier {
   /// so replies can be personalised. Optional; failures are ignored.
   final Future<HealthBotUserContext?> Function(String userId)? loadUserContext;
 
-  /// Where the start of the current chat (New Chat) is remembered.
+  /// Where the open chat is remembered on this device.
   final HealthBotChatSessionStore _chatSessions;
 
   HealthBotController(
@@ -69,20 +71,48 @@ class HealthBotController extends ChangeNotifier {
   bool disclaimerAcknowledged = false;
   HealthBotStatus status = HealthBotStatus.idle;
   String? errorMessage;
+
+  /// Messages of the open chat. Follow-up context is built from it, so each
+  /// chat's context stays separate.
   final List<HealthBotMessage> transcript = [];
   String? _historyUserId;
   bool isHistoryLoading = false;
   String? historyErrorMessage;
   int _historyRequest = 0;
 
+  /// Chat History: the signed-in user's chats, most recently active first.
+  List<HealthBotChat> chats = const [];
+
+  /// The open chat (its sessionId). New messages are saved with it.
+  String? currentChatId;
+
+  bool isChatListLoading = false;
+  String? chatListErrorMessage;
+
+  /// Saved exchanges read for the signed-in user, plus those saved in this
+  /// session, by conversationId. Chats are grouped from these.
+  final Map<String, HealthBotConversation> _exchanges = {};
+  DateTime? _legacyBoundary;
+  String? _savedActiveChatId;
+  int _chatListRequest = 0;
+  final Random _random = Random();
+
   void clearSession() {
     _historyRequest++;
+    _chatListRequest++;
     _historyUserId = null;
     newChatStarted = false;
     _userContext = null;
     _userContextUserId = null;
     _userContextLoadedAt = null;
     transcript.clear();
+    _exchanges.clear();
+    chats = const [];
+    currentChatId = null;
+    _savedActiveChatId = null;
+    _legacyBoundary = null;
+    isChatListLoading = false;
+    chatListErrorMessage = null;
     disclaimerAcknowledged = false;
     errorMessage = null;
     historyErrorMessage = null;
@@ -91,42 +121,37 @@ class HealthBotController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Loads [userId]'s saved conversations and opens the chat they last used
+  /// (or the most recent one).
   Future<void> loadHistory(String userId) async {
     if (_historyUserId == userId) return;
     final request = ++_historyRequest;
+    _chatListRequest++;
     transcript.clear();
+    _exchanges.clear();
+    chats = const [];
+    currentChatId = null;
+    _savedActiveChatId = null;
     newChatStarted = false;
     isHistoryLoading = true;
     historyErrorMessage = null;
+    chatListErrorMessage = null;
     notifyListeners();
     try {
-      final startedAtFuture = _safeChatStartedAt(userId);
+      final activeFuture = _readStore(() => _chatSessions.activeChatId(userId));
+      final boundaryFuture = _readStore(
+        () => _chatSessions.chatStartedAt(userId),
+      );
       final conversations = await _repository.getConversations(userId);
-      final chatStartedAt = await startedAtFuture;
+      final activeChatId = await activeFuture;
+      final boundary = await boundaryFuture;
       if (request != _historyRequest) return;
-      for (final item in conversations) {
-        // Only the current chat: anything from before the last New Chat
-        // stays saved but is neither shown nor sent as context.
-        if (chatStartedAt != null && item.timestamp.isBefore(chatStartedAt)) {
-          continue;
-        }
-        transcript.addAll([
-          HealthBotMessage(
-            sender: HealthBotSender.user,
-            text: item.query,
-            timestamp: item.timestamp,
-          ),
-          HealthBotMessage(
-            sender: HealthBotSender.bot,
-            text: item.botResponse,
-            timestamp: item.timestamp,
-            isEmergency: item.isEmergency,
-            sources: item.sources,
-            note: item.note,
-            answerSource: item.answerSource,
-          ),
-        ]);
-      }
+      _legacyBoundary = boundary;
+      _addExchanges(userId, conversations);
+      _regroup();
+      _savedActiveChatId = activeChatId;
+      currentChatId = _initialChatId(activeChatId, boundary);
+      _showCurrentChat();
       _historyUserId = userId;
     } catch (_) {
       if (request != _historyRequest) return;
@@ -135,6 +160,31 @@ class HealthBotController extends ChangeNotifier {
     } finally {
       if (request == _historyRequest) {
         isHistoryLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Re-reads saved conversations for Chat History (e.g. ones saved on
+  /// another device) without changing the open chat.
+  Future<void> refreshChats(String userId) async {
+    if (isChatListLoading) return;
+    final request = ++_chatListRequest;
+    isChatListLoading = true;
+    chatListErrorMessage = null;
+    notifyListeners();
+    try {
+      final conversations = await _repository.getConversations(userId);
+      if (request != _chatListRequest) return;
+      _addExchanges(userId, conversations);
+      _regroup();
+    } catch (_) {
+      if (request != _chatListRequest) return;
+      chatListErrorMessage =
+          'Could not load your chat history. Please try again.';
+    } finally {
+      if (request == _chatListRequest) {
+        isChatListLoading = false;
         notifyListeners();
       }
     }
@@ -153,39 +203,123 @@ class HealthBotController extends ChangeNotifier {
       !isHistoryLoading &&
       (transcript.isNotEmpty || historyErrorMessage != null);
 
+  /// Chat History can be opened any time except while a reply is on its way
+  /// or the history is still loading.
+  bool get canOpenChatHistory =>
+      status != HealthBotStatus.sending && !isHistoryLoading;
+
   /// True from a New Chat until the first message in it, so the empty chat
   /// can say that earlier messages are still saved.
   bool newChatStarted = false;
 
-  /// Starts a completely fresh conversation: clears the visible chat and,
-  /// because follow-up context is built from it, the context sent with the
-  /// next question. Saved conversations are not deleted or changed; the
-  /// start time is remembered so they stay out of this chat after a
-  /// restart too.
+  /// Starts a completely fresh conversation with its own id: clears the
+  /// visible chat and, because follow-up context is built from it, the
+  /// context sent with the next question. Earlier chats stay saved and are
+  /// listed in Chat History.
   Future<void> startNewChat(String userId) async {
     if (status == HealthBotStatus.sending || isHistoryLoading) return;
-    final startedAt = now();
     _historyRequest++;
     _historyUserId = userId;
+    final chatId = _newChatId();
+    currentChatId = chatId;
     transcript.clear();
     errorMessage = null;
     historyErrorMessage = null;
     lastResponseTime = null;
     newChatStarted = true;
     notifyListeners();
-    try {
-      await _chatSessions.saveChatStartedAt(userId, startedAt);
-    } catch (e) {
-      // The new chat still applies for this app session.
-      debugPrint('HealthBotController: could not save new chat start: $e');
+    await _saveActiveChat(userId, chatId);
+  }
+
+  /// Opens a chat from Chat History to read or continue it. Only that
+  /// chat's messages are shown and used as context.
+  Future<void> openChat(String userId, String chatId) async {
+    if (status == HealthBotStatus.sending || isHistoryLoading) return;
+    currentChatId = chatId;
+    errorMessage = null;
+    historyErrorMessage = null;
+    lastResponseTime = null;
+    newChatStarted = false;
+    _showCurrentChat();
+    notifyListeners();
+    await _saveActiveChat(userId, chatId);
+  }
+
+  void _addExchanges(String userId, Iterable<HealthBotConversation> items) {
+    for (final item in items) {
+      // Defensive: only this account's exchanges, whatever was returned.
+      if (item.userId == userId) _exchanges[item.conversationId] = item;
     }
   }
 
-  Future<DateTime?> _safeChatStartedAt(String userId) async {
+  void _regroup() {
+    chats = groupIntoChats(_exchanges.values, legacyBoundary: _legacyBoundary);
+  }
+
+  HealthBotChat? _chatById(String? id) {
+    for (final chat in chats) {
+      if (chat.id == id) return chat;
+    }
+    return null;
+  }
+
+  /// The remembered chat; otherwise the most recent one, unless a New Chat
+  /// from the earlier build is still empty; otherwise a fresh chat.
+  String _initialChatId(String? activeChatId, DateTime? boundary) {
+    if (activeChatId != null && activeChatId.isNotEmpty) return activeChatId;
+    final latest = chats.isEmpty ? null : chats.first;
+    if (latest == null ||
+        (boundary != null && latest.lastMessageAt.isBefore(boundary))) {
+      return _newChatId();
+    }
+    return latest.id;
+  }
+
+  void _showCurrentChat() {
+    transcript.clear();
+    final chat = _chatById(currentChatId);
+    if (chat == null) return;
+    for (final item in chat.exchanges) {
+      transcript.addAll(_messagesFor(item));
+    }
+  }
+
+  static List<HealthBotMessage> _messagesFor(HealthBotConversation item) => [
+    HealthBotMessage(
+      sender: HealthBotSender.user,
+      text: item.query,
+      timestamp: item.timestamp,
+    ),
+    HealthBotMessage(
+      sender: HealthBotSender.bot,
+      text: item.botResponse,
+      timestamp: item.timestamp,
+      isEmergency: item.isEmergency,
+      sources: item.sources,
+      note: item.note,
+      answerSource: item.answerSource,
+    ),
+  ];
+
+  String _newChatId() =>
+      'chat_${now().microsecondsSinceEpoch}_${_random.nextInt(1 << 30).toRadixString(36)}';
+
+  Future<void> _saveActiveChat(String userId, String chatId) async {
+    if (_savedActiveChatId == chatId) return;
+    _savedActiveChatId = chatId;
     try {
-      return await _chatSessions.chatStartedAt(userId);
+      await _chatSessions.saveActiveChatId(userId, chatId);
     } catch (e) {
-      debugPrint('HealthBotController: chat start unavailable: $e');
+      // The chat still stays open for this app session.
+      debugPrint('HealthBotController: could not remember the open chat: $e');
+    }
+  }
+
+  Future<T?> _readStore<T>(Future<T?> Function() read) async {
+    try {
+      return await read();
+    } catch (e) {
+      debugPrint('HealthBotController: chat store unavailable: $e');
       return null;
     }
   }
@@ -202,7 +336,8 @@ class HealthBotController extends ChangeNotifier {
       return;
     }
     final request = _historyRequest;
-    // Built before this question joins the transcript.
+    final chatId = currentChatId ??= _newChatId();
+    // Built before this question joins the transcript: this chat only.
     final history = _recentHistory();
 
     final timestamp = now();
@@ -287,22 +422,27 @@ class HealthBotController extends ChangeNotifier {
         answerSource: answerSource,
       ),
     );
+    final exchange = HealthBotConversation(
+      conversationId: timestamp.microsecondsSinceEpoch.toString(),
+      userId: userId,
+      query: sanitized,
+      botResponse: botResponseText,
+      timestamp: timestamp,
+      isEmergency: isEmergency,
+      sources: sources,
+      note: note,
+      answerSource: answerSource,
+      sessionId: chatId,
+    );
+    // Chat History is up to date at once, before the save completes.
+    _exchanges[exchange.conversationId] = exchange;
+    _regroup();
     status = HealthBotStatus.idle;
     notifyListeners();
 
+    unawaited(_saveActiveChat(userId, chatId));
     // Fire-and-forget: a logging failure must never block or error the chat.
-    unawaited(
-      _logConversation(
-        userId: userId,
-        query: sanitized,
-        botResponse: botResponseText,
-        timestamp: timestamp,
-        isEmergency: isEmergency,
-        sources: sources,
-        note: note,
-        answerSource: answerSource,
-      ),
-    );
+    unawaited(_logConversation(exchange));
   }
 
   /// The last [maxHistoryMessages] chat messages, oldest first, for
@@ -350,30 +490,9 @@ class HealthBotController extends ChangeNotifier {
     return _userContext;
   }
 
-  Future<void> _logConversation({
-    required String userId,
-    required String query,
-    required String botResponse,
-    required DateTime timestamp,
-    required bool isEmergency,
-    required List<HealthBotSource> sources,
-    String? note,
-    HealthBotAnswerSource? answerSource,
-  }) async {
+  Future<void> _logConversation(HealthBotConversation exchange) async {
     try {
-      await _repository.logConversation(
-        HealthBotConversation(
-          conversationId: timestamp.microsecondsSinceEpoch.toString(),
-          userId: userId,
-          query: query,
-          botResponse: botResponse,
-          timestamp: timestamp,
-          isEmergency: isEmergency,
-          sources: sources,
-          note: note,
-          answerSource: answerSource,
-        ),
-      );
+      await _repository.logConversation(exchange);
     } catch (e) {
       debugPrint(
         'HealthBotController: failed to log conversation (non-fatal): $e',

@@ -5,6 +5,8 @@ import 'package:quit_companion/features/health_bot/models/health_bot_message.dar
 import 'package:quit_companion/core/theme/app_theme.dart';
 import 'package:quit_companion/features/crisis_support/data/helpline_launcher.dart';
 import 'package:quit_companion/features/health_bot/data/health_bot_client.dart';
+import 'package:quit_companion/features/health_bot/domain/health_bot_chats.dart';
+import 'package:quit_companion/features/health_bot/presentation/screens/health_bot_history_screen.dart';
 
 const _suggestedChips = [
   ('healthbot_chip_irritable', 'Why do I feel so irritable?'),
@@ -99,6 +101,12 @@ class _HealthBotScreenState extends State<HealthBotScreen> {
         // acknowledged — someone in distress shouldn't have to accept terms
         // first to see a helpline.
         actions: [
+          IconButton(
+            key: const Key('healthbot_history_button'),
+            tooltip: 'Chat history',
+            onPressed: controller.canOpenChatHistory ? _openChatHistory : null,
+            icon: const Icon(Icons.history_rounded),
+          ),
           IconButton(
             key: const Key('healthbot_new_chat_button'),
             tooltip: 'New chat',
@@ -228,15 +236,31 @@ class _HealthBotScreenState extends State<HealthBotScreen> {
       );
     }
     final isTyping = controller.status == HealthBotStatus.sending;
+    final messageCount = controller.transcript.length;
+    final typingSlots = isTyping ? 1 : 0;
     return ListView.builder(
       key: const Key('healthbot_transcript'),
       reverse: true,
       padding: const EdgeInsets.all(16),
-      itemCount: controller.transcript.length + (isTyping ? 1 : 0),
+      // + 1: when the conversation started, shown above its first message.
+      itemCount: messageCount + typingSlots + 1,
       itemBuilder: (context, index) {
         if (isTyping && index == 0) return const _TypingIndicator();
-        final messageIndex =
-            controller.transcript.length - 1 - index + (isTyping ? 1 : 0);
+        if (index == messageCount + typingSlots) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Started ${formatChatDateTime(controller.transcript.first.timestamp)}',
+              key: const Key('healthbot_chat_started_at'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          );
+        }
+        final messageIndex = messageCount - 1 - index + typingSlots;
         return _buildBubble(controller.transcript[messageIndex], messageIndex);
       },
     );
@@ -252,6 +276,23 @@ class _HealthBotScreenState extends State<HealthBotScreen> {
   Future<void> _startNewChat() async {
     _inputController.clear();
     await widget.controller.startNewChat(widget.userId);
+  }
+
+  /// Chat History; picking a chat there opens it here to continue.
+  Future<void> _openChatHistory() async {
+    final before = widget.controller.currentChatId;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => HealthBotHistoryScreen(
+          userId: widget.userId,
+          controller: widget.controller,
+        ),
+      ),
+    );
+    // A half-typed question belonged to the previous chat.
+    if (mounted && widget.controller.currentChatId != before) {
+      _inputController.clear();
+    }
   }
 
   Widget _buildBubble(HealthBotMessage message, int index) {
