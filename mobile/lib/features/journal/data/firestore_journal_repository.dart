@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:quit_companion/features/journal/models/journal_entry.dart';
 import 'package:quit_companion/features/onboarding/models/product_type.dart';
 import 'package:quit_companion/features/craving/models/relapse_mood.dart';
@@ -51,9 +52,16 @@ class FirestoreJournalRepository implements JournalRepository {
     final snapshot = await _entriesFor(
       userId,
     ).orderBy('entryDate', descending: true).get();
-    return snapshot.docs
-        .map((doc) => _fromDoc(userId, doc.id, doc.data()))
-        .toList();
+    // One malformed entry must not hide the whole journal: skip and log it.
+    final entries = <JournalEntry>[];
+    for (final doc in snapshot.docs) {
+      try {
+        entries.add(_fromDoc(userId, doc.id, doc.data()));
+      } catch (e) {
+        debugPrint('Skipping malformed journal entry ${doc.id}: $e');
+      }
+    }
+    return entries;
   }
 
   JournalEntry _fromDoc(

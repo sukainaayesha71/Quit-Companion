@@ -15,6 +15,7 @@ Map<String, dynamic> encodeCraving(CravingLog log) => {
   'timestamp': log.timestamp.toIso8601String(),
   'relapseRiskScore': log.relapseRiskScore.name,
   'riskAssessmentPending': log.riskAssessmentPending,
+  'assessmentSource': log.assessmentSource,
   'recoveryContext': log.recoveryContext,
   'nicotineUsedSinceLastCheckin': log.nicotineUsedSinceLastCheckin,
   'moodHappy': log.moodHappy,
@@ -45,6 +46,7 @@ CravingLog decodeCraving(Map<String, dynamic> data) => CravingLog(
     data['relapseRiskScore'] as String,
   ),
   riskAssessmentPending: data['riskAssessmentPending'] as bool? ?? false,
+  assessmentSource: data['assessmentSource'] as String?,
   recoveryContext:
       (data['recoveryContext'] as Map?)?.map(
         (k, v) => MapEntry(k as String, (v as num).toDouble()),

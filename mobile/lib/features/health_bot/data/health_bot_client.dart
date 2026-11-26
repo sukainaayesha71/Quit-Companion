@@ -18,6 +18,13 @@ class HealthBotUnreachableException extends HealthBotClientException {
   HealthBotUnreachableException(super.message);
 }
 
+/// The user's sign-in couldn't be verified (missing/expired token, HTTP
+/// 401/403). The only failure whose message is shown under the reply,
+/// because the user can act on it by signing in again.
+class HealthBotAuthException extends HealthBotClientException {
+  HealthBotAuthException(super.message);
+}
+
 enum HealthBotAnswerType { matched, emergency, unmatched }
 
 /// Where an answer's text came from, so curated, rule-based or offline
@@ -111,8 +118,65 @@ class HealthBotAnswer {
   });
 }
 
+/// One earlier chat message sent with a question, so the backend can
+/// understand follow-ups ("what about vaping?", "explain that simpler").
+class HealthBotTurn {
+  /// True for the user's message, false for a Health-Bot reply.
+  final bool fromUser;
+  final String text;
+
+  const HealthBotTurn({required this.fromUser, required this.text});
+
+  Map<String, String> toJson() => {
+    'role': fromUser ? 'user' : 'assistant',
+    'text': text,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is HealthBotTurn && other.fromUser == fromUser && other.text == text;
+
+  @override
+  int get hashCode => Object.hash(fromUser, text);
+}
+
+/// Minimal, non-identifying profile details for personalised replies: no
+/// name, email, phone number or free text.
+class HealthBotUserContext {
+  /// ProductType name: vape, cigarettes, pouches or hookah.
+  final String? product;
+
+  /// Whole days since the quit date (or the last restart); negative when
+  /// the quit date is still ahead.
+  final int? daysSinceQuit;
+
+  /// QuitStrategy name: coldTurkey, gradual or dateBased.
+  final String? quitStrategy;
+
+  const HealthBotUserContext({
+    this.product,
+    this.daysSinceQuit,
+    this.quitStrategy,
+  });
+
+  bool get isEmpty =>
+      product == null && daysSinceQuit == null && quitStrategy == null;
+
+  Map<String, Object> toJson() => {
+    'product': ?product,
+    'days_since_quit': ?daysSinceQuit,
+    'quit_strategy': ?quitStrategy,
+  };
+}
+
 /// Talks to the FastAPI backend's POST /healthbot/query (FR8, Module 6
 /// plan) for Gemini-generated Health-Bot replies.
 abstract class HealthBotClient {
-  Future<HealthBotAnswer> ask({required String query});
+  /// [history] holds the most recent earlier messages (oldest first) and
+  /// [userContext] the user's quit details; both are optional.
+  Future<HealthBotAnswer> ask({
+    required String query,
+    List<HealthBotTurn> history = const [],
+    HealthBotUserContext? userContext,
+  });
 }

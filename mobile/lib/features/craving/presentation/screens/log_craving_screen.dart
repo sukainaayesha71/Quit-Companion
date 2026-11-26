@@ -131,6 +131,9 @@ class _LogCravingScreenState extends State<LogCravingScreen> {
   @override
   void initState() {
     super.initState();
+    // Every opening is a new, separate assessment: the shared controller
+    // must not show the previous craving's result (saved logs unaffected).
+    widget.controller.startNewEntry();
     widget.controller.addListener(_onControllerChanged);
   }
 
@@ -204,6 +207,7 @@ class _LogCravingScreenState extends State<LogCravingScreen> {
             triggerCategory: _trigger!,
             mood: _mood!,
             controller: widget.alternativesController,
+            riskLevel: widget.controller.lastRiskLevel,
             predictionSource: widget.controller.lastPredictionSource,
           ),
         ),

@@ -14,14 +14,12 @@ import 'package:quit_companion/features/auth/presentation/screens/widgets/social
 class RegisterScreen extends StatefulWidget {
   final void Function(String userId, String email, String? name) onRegistered;
   final VoidCallback? onLoginTap;
-  final VoidCallback? onPhoneSignInTap;
   final RecentEmailStore? recentEmailStore;
 
   const RegisterScreen({
     super.key,
     required this.onRegistered,
     this.onLoginTap,
-    this.onPhoneSignInTap,
     this.recentEmailStore,
   });
 
@@ -34,7 +32,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _emailFocusNode = FocusNode();
   bool _obscurePassword = true;
   bool _agreedToTerms = true;
@@ -67,7 +64,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _phoneController.dispose();
     _emailFocusNode.dispose();
     super.dispose();
   }
@@ -389,15 +385,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       ),
       const SizedBox(height: 14),
-      _pillField(
-        fieldKey: const Key('register_phone_field'),
-        controller: _phoneController,
-        label: 'Phone Number',
-        icon: Icons.phone_outlined,
-        keyboardType: TextInputType.phone,
-        onChanged: (_) => _clearAuthError(),
-      ),
-      const SizedBox(height: 14),
       InkWell(
         key: const Key('register_terms_checkbox'),
         onTap: () => setState(() => _agreedToTerms = !_agreedToTerms),
@@ -466,16 +453,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           }
         },
       ),
-      if (widget.onPhoneSignInTap != null) ...[
-        const SizedBox(height: 16),
-        Center(
-          child: TextButton(
-            key: const Key('register_phone_sign_in_link'),
-            onPressed: widget.onPhoneSignInTap,
-            child: const Text('Or continue with Phone Number'),
-          ),
-        ),
-      ],
     ];
   }
 }

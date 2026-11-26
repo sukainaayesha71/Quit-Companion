@@ -22,7 +22,11 @@ import 'package:quit_companion/features/tracking/controllers/track_controller.da
 class _DelayedClient implements HealthBotClient {
   final response = Completer<HealthBotAnswer>();
   @override
-  Future<HealthBotAnswer> ask({required String query}) => response.future;
+  Future<HealthBotAnswer> ask({
+    required String query,
+    List<HealthBotTurn> history = const [],
+    HealthBotUserContext? userContext,
+  }) => response.future;
 }
 
 void main() {

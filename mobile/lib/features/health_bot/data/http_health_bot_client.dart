@@ -13,12 +13,14 @@ class HttpHealthBotClient implements HealthBotClient {
   final http.Client _httpClient;
   final Future<String?> Function() _getIdToken;
 
-  /// FR8: hard ceiling for one request. The backend gives Gemini 1.5 s and
-  /// then answers from the curated catalogue, so a healthy backend replies
-  /// well inside this. The extra margin is for mobile networks; past it,
-  /// the controller answers locally rather than leave the user waiting.
+  /// Hard ceiling for one request. The backend gives Gemini a fixed budget
+  /// (HEALTHBOT_GEMINI_TIMEOUT_SECONDS, 10 s in production) and then answers
+  /// from the curated knowledge, so a healthy backend replies inside this.
+  /// The extra margin is for slow mobile networks (a new HTTPS connection to
+  /// the server can take ~2-3 s on its own); past it, the controller offers
+  /// "Try again" rather than leave the user waiting.
   final Duration requestTimeout;
-  static const defaultRequestTimeout = Duration(seconds: 4);
+  static const defaultRequestTimeout = Duration(seconds: 16);
 
   HttpHealthBotClient({
     required this.baseUrl,
@@ -38,17 +40,21 @@ class HttpHealthBotClient implements HealthBotClient {
       'Could not reach the Health-Bot. Please try again.';
 
   @override
-  Future<HealthBotAnswer> ask({required String query}) async {
+  Future<HealthBotAnswer> ask({
+    required String query,
+    List<HealthBotTurn> history = const [],
+    HealthBotUserContext? userContext,
+  }) async {
     final String? idToken;
     try {
       idToken = await _getIdToken();
     } catch (_) {
-      throw HealthBotClientException(
+      throw HealthBotAuthException(
         'Could not verify your sign-in. Please sign in again.',
       );
     }
     if (idToken == null || idToken.isEmpty) {
-      throw HealthBotClientException('Please sign in to use the Health-Bot.');
+      throw HealthBotAuthException('Please sign in to use the Health-Bot.');
     }
 
     final http.Response response;
@@ -61,7 +67,13 @@ class HttpHealthBotClient implements HealthBotClient {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $idToken',
             },
-            body: jsonEncode({'query': query}),
+            body: jsonEncode({
+              'query': query,
+              if (history.isNotEmpty)
+                'history': [for (final turn in history) turn.toJson()],
+              if (userContext != null && !userContext.isEmpty)
+                'user_context': userContext.toJson(),
+            }),
           )
           .timeout(requestTimeout);
     } on TimeoutException {
@@ -72,6 +84,11 @@ class HttpHealthBotClient implements HealthBotClient {
       debugPrint('HttpHealthBotClient failed: $e\n$st');
       throw HealthBotUnreachableException(
         'Could not reach the Health-Bot service. Check your connection.',
+      );
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw HealthBotAuthException(
+        'Your sign-in has expired. Please sign in again.',
       );
     }
     if (response.statusCode != 200) {

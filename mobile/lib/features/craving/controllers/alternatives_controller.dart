@@ -8,6 +8,15 @@ import 'package:quit_companion/features/craving/models/trigger_category.dart';
 import 'package:quit_companion/features/goals/data/coaching_client.dart';
 import 'package:quit_companion/shared/domain/perf_log.dart';
 
+/// Who ordered the suggestions the user sees.
+enum RecommendationRankingSource {
+  /// The backend's personalised recommendation model (/recommend/alternative).
+  personalisedModel,
+
+  /// The app's own rules, because the model couldn't be reached.
+  onDeviceRules,
+}
+
 /// Ranks the fixed, curated library using current context and the user's
 /// locally stored attempt outcomes. Recommendation text is never generated.
 class AlternativesController extends ChangeNotifier {
@@ -22,6 +31,10 @@ class AlternativesController extends ChangeNotifier {
   }) : now = now ?? DateTime.now;
 
   List<HabitAlternative> recommendations = [];
+
+  /// Null while the model's ranking is still pending (the on-device order is
+  /// shown meanwhile); then says honestly which one produced the order.
+  RecommendationRankingSource? rankingSource;
   List<HabitAlternativeAttempt> attemptHistory = [];
   AlternativeCategory? filter;
   String? feedbackMessage;
@@ -44,6 +57,7 @@ class AlternativesController extends ChangeNotifier {
     _recommendationTrigger = triggerCategory;
     _recommendationMood = mood;
     isRecommendationsLoading = true;
+    rankingSource = null;
     notifyListeners();
     final sw = Stopwatch()..start();
     await loadAttemptHistory(userId);
@@ -68,7 +82,10 @@ class AlternativesController extends ChangeNotifier {
   }
 
   Future<void> _rankRemotely(TriggerCategory trigger, Mood mood) async {
-    if (coachingClient == null) return;
+    if (coachingClient == null) {
+      rankingSource = RecommendationRankingSource.onDeviceRules;
+      return;
+    }
     try {
       final ids = await coachingClient!.rank(trigger.name, mood.name);
       final local = [...recommendations];
@@ -76,8 +93,11 @@ class AlternativesController extends ChangeNotifier {
         for (final id in ids) ...local.where((a) => a.alternativeId == id),
         ...local.where((a) => !ids.contains(a.alternativeId)),
       ];
-    } catch (_) {
-      /* Local personalized ranking remains available offline. */
+      rankingSource = RecommendationRankingSource.personalisedModel;
+    } catch (e) {
+      // The on-device ranking stays, and the screen says so honestly.
+      debugPrint('Recommendation model unavailable, using on-device rules: $e');
+      rankingSource = RecommendationRankingSource.onDeviceRules;
     }
   }
 

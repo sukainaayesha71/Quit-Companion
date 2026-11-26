@@ -21,6 +21,7 @@ import 'package:quit_companion/core/theme/app_theme.dart';
 import 'package:quit_companion/shared/widgets/staggered_entrance.dart';
 import 'package:quit_companion/features/community/presentation/screens/community_screen.dart';
 import 'package:quit_companion/features/craving/presentation/screens/high_risk_screen.dart';
+import 'package:quit_companion/features/relapse/data/relapse_prediction_client.dart';
 import 'package:quit_companion/features/craving/presentation/screens/log_craving_screen.dart';
 import 'package:quit_companion/features/goals/presentation/screens/weekly_plan_screen.dart';
 import 'package:quit_companion/features/health_bot/presentation/screens/health_bot_screen.dart';
@@ -329,7 +330,9 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   /// FR4/UC6 high-risk banner action: the same HighRiskScreen as the
   /// Alternatives tile, but personalized with the triggering craving's real
-  /// trigger and mood, like LogCravingScreen's own high-risk redirect.
+  /// trigger and mood, like LogCravingScreen's own high-risk redirect. Also
+  /// shows that same saved assessment's risk level and how it was scored,
+  /// so the banner and Alternatives describe one assessment.
   void _openAlternativesForHighRisk(BuildContext context) {
     final log = widget.controller.recentHighRiskLog;
     if (log == null) return;
@@ -340,6 +343,8 @@ class _DashboardScreenState extends State<DashboardScreen>
           triggerCategory: log.triggerCategory,
           mood: log.mood,
           controller: widget.alternativesController,
+          riskLevel: log.relapseRiskScore,
+          predictionSource: parsePredictionSource(log.assessmentSource),
         ),
       ),
     );

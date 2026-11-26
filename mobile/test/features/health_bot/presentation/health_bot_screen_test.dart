@@ -12,7 +12,11 @@ import 'package:quit_companion/features/crisis_support/presentation/screens/cris
 class _PendingHealthBotClient extends FakeHealthBotClient {
   final answer = Completer<HealthBotAnswer>();
   @override
-  Future<HealthBotAnswer> ask({required String query}) => answer.future;
+  Future<HealthBotAnswer> ask({
+    required String query,
+    List<HealthBotTurn> history = const [],
+    HealthBotUserContext? userContext,
+  }) => answer.future;
 }
 
 void main() {

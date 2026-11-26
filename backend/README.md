@@ -61,6 +61,19 @@ with AI unavailable; logs never include the API key or user query.
 Health-Bot messages are sent to Google Gemini and are also saved in the user's
 conversation history; the mobile app discloses both in its disclaimer.
 
+Conversation: each question can carry the last 10 chat messages (`history`) and
+non-identifying quit details (`user_context`: product, quit strategy, days since
+quitting; never the name or contact details), so follow-ups ("explain that more
+simply", "what about vaping?") and personalised replies work. Before calling
+Gemini, `app/healthbot/knowledge.py` retrieves the most relevant knowledge notes
+(the 32 reviewed topics plus conversational notes whose facts come from WHO, NHS,
+CDC, NCI and Smokefree.gov pages) using character n-gram TF-IDF, which also
+matches misspellings. Gemini answers from those notes and reports which ones it
+used (`source_ids`), and the response lists only those notes' sources. If Gemini
+fails, the curated fallback uses the keyword table first, then the closest note.
+`tools/evaluate_healthbot_live.py` runs a live evaluation against Gemini (manual;
+not part of the test suite).
+
 ## FCM notification sender
 
 The mobile app registers opt-in device tokens in each user's private

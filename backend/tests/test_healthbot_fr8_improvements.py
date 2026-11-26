@@ -253,13 +253,18 @@ def test_router_passes_configured_budget(client, firebase_identity, monkeypatch)
 def test_end_to_end_response_stays_under_two_seconds_when_gemini_hangs(
     client, firebase_identity, monkeypatch
 ) -> None:
-    """Measured in-process (no network): auth + routing + budget + fallback."""
+    """Measured in-process (no network): auth + routing + budget + fallback.
+
+    The production budget is 10 s (Gemini needs 2-9 s for a conversational
+    reply); this checks the mechanism with the original FR8 1.5 s budget.
+    """
     from app.config import settings
 
     async def hang(*_: object, **__: object) -> HealthBotAnswer:
         await asyncio.sleep(30)
         raise AssertionError("unreachable")
 
+    monkeypatch.setattr(settings, "healthbot_gemini_timeout_seconds", 1.5)
     monkeypatch.setattr(settings, "gemini_api_key", "server-key")
     monkeypatch.setattr(healthbot, "_request_gemini_answer", hang)
     started = time.perf_counter()

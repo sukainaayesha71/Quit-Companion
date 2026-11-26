@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:quit_companion/shared/widgets/action_progress.dart';
+import 'package:quit_companion/shared/widgets/empty_state_message.dart';
 import 'package:quit_companion/features/journal/controllers/journal_controller.dart';
 import 'package:quit_companion/core/theme/app_theme.dart';
 import 'package:quit_companion/features/journal/presentation/screens/add_journal_entry_screen.dart';
@@ -202,23 +203,31 @@ class _JournalScreenState extends State<JournalScreen> {
       );
     }
     if (controller.status == JournalStatus.error) {
-      return Center(
-        child: Text(
-          controller.errorMessage ?? 'Something went wrong.',
-          key: const Key('journal_error_text'),
-          style: const TextStyle(color: AppColors.error, fontSize: 14),
-          textAlign: TextAlign.center,
-        ),
+      return EmptyStateMessage(
+        key: const Key('journal_error_state'),
+        icon: Icons.cloud_off_rounded,
+        title: "Couldn't load your journal",
+        message:
+            controller.errorMessage ??
+            'Check your connection and try again.',
+        messageKey: const Key('journal_error_text'),
+        actionLabel: 'Try again',
+        actionKey: const Key('journal_retry_button'),
+        onAction: () => controller.loadEntries(widget.userId),
+        isError: true,
       );
     }
     if (controller.entries.isEmpty) {
-      return const Center(
-        child: Text(
-          'No entries yet — tap + to write your first one.',
-          key: Key('journal_empty_state'),
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
-          textAlign: TextAlign.center,
-        ),
+      return EmptyStateMessage(
+        key: const Key('journal_empty_state'),
+        icon: Icons.edit_note_rounded,
+        title: 'Your journal is empty',
+        message:
+            'Write how you feel, what triggered a craving, or a win worth '
+            'remembering. Your entries are private to you.',
+        actionLabel: 'Write your first entry',
+        actionKey: const Key('journal_empty_add_button'),
+        onAction: _openAddEntry,
       );
     }
     return ListView.separated(

@@ -7,6 +7,8 @@ class FakeHealthBotClient implements HealthBotClient {
   HealthBotAnswer nextAnswer;
   Object? failWith;
   final List<String> askedQueries = [];
+  final List<List<HealthBotTurn>> askedHistories = [];
+  final List<HealthBotUserContext?> askedContexts = [];
 
   FakeHealthBotClient({
     this.nextAnswer = const HealthBotAnswer(
@@ -17,8 +19,14 @@ class FakeHealthBotClient implements HealthBotClient {
   });
 
   @override
-  Future<HealthBotAnswer> ask({required String query}) async {
+  Future<HealthBotAnswer> ask({
+    required String query,
+    List<HealthBotTurn> history = const [],
+    HealthBotUserContext? userContext,
+  }) async {
     askedQueries.add(query);
+    askedHistories.add(List.unmodifiable(history));
+    askedContexts.add(userContext);
     if (failWith != null) throw failWith!;
     return nextAnswer;
   }

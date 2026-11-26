@@ -24,6 +24,7 @@ import 'package:quit_companion/features/health_bot/data/fake_health_bot_client.d
 import 'package:quit_companion/features/health_bot/data/fake_health_bot_repository.dart';
 import 'package:quit_companion/features/journal/data/fake_journal_repository.dart';
 import 'package:quit_companion/features/relapse/data/fake_relapse_prediction_client.dart';
+import 'package:quit_companion/features/relapse/data/relapse_prediction_client.dart';
 import 'package:quit_companion/features/tracking/data/fake_usage_log_repository.dart';
 import 'package:quit_companion/features/profile/data/fake_user_repository.dart';
 import 'package:quit_companion/features/dashboard/domain/dashboard_state_calculator.dart';
@@ -1457,6 +1458,7 @@ void main() {
     Future<void> pumpDashboard(
       WidgetTester tester, {
       required FakeCravingLogRepository cravingLogRepository,
+      CravingLogController? cravingLogController,
     }) async {
       final userRepository = FakeUserRepository();
       await userRepository.saveUser(
@@ -1479,7 +1481,8 @@ void main() {
               userRepository: userRepository,
               cravingLogRepository: cravingLogRepository,
             ),
-            cravingLogController: buildCravingLogController(),
+            cravingLogController:
+                cravingLogController ?? buildCravingLogController(),
             aiPlanController: buildAiPlanController(),
             journalController: buildJournalController(),
             relapseController: buildRelapseController(),
@@ -1539,6 +1542,219 @@ void main() {
         );
         expect(screen.triggerCategory, TriggerCategory.socialPressure);
         expect(screen.mood, Mood.social);
+      },
+    );
+
+    CravingLog sourcedRiskLog(RelapseRiskLevel risk, String? source) =>
+        CravingLog(
+          logId: 'sourced',
+          userId: 'u1',
+          cravingIntensity: 9,
+          mood: Mood.stressed,
+          triggerCategory: TriggerCategory.stress,
+          locationContext: 'Work',
+          activity: 'Working/studying',
+          timestamp: fixedToday.subtract(const Duration(hours: 1)),
+          relapseRiskScore: risk,
+          assessmentSource: source,
+        );
+
+    Future<void> openAlternativesFromBanner(WidgetTester tester) async {
+      await tester.ensureVisible(
+        find.byKey(const Key('dashboard_high_risk_banner_action')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('dashboard_high_risk_banner_action')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(HighRiskScreen), findsOneWidget);
+    }
+
+    Future<void> logCravingFromDashboard(WidgetTester tester) async {
+      await tester.ensureVisible(
+        find.byKey(const Key('dashboard_quick_access_log_craving')),
+      );
+      await tester.tap(
+        find.byKey(const Key('dashboard_quick_access_log_craving')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('craving_mood_stressed')));
+      await tester.ensureVisible(
+        find.byKey(const Key('craving_trigger_stress')),
+      );
+      await tester.tap(find.byKey(const Key('craving_trigger_stress')));
+      await tester.pump();
+      await tester.ensureVisible(
+        find.byKey(const Key('craving_location_dropdown')),
+      );
+      await tester.tap(find.byKey(const Key('craving_location_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Home').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('craving_activity_dropdown')),
+      );
+      await tester.tap(find.byKey(const Key('craving_activity_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Working/studying').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('craving_submit_button')),
+      );
+      await tester.tap(find.byKey(const Key('craving_submit_button')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'the banner opens Alternatives showing that saved assessment: High Risk, scored by ML',
+      (tester) async {
+        final logs = FakeCravingLogRepository();
+        await logs.logCraving(
+          sourcedRiskLog(RelapseRiskLevel.high, 'machine_learning'),
+        );
+        await pumpDashboard(tester, cravingLogRepository: logs);
+
+        // The Dashboard alert itself is unchanged.
+        expect(find.text('High craving risk right now'), findsOneWidget);
+        await openAlternativesFromBanner(tester);
+
+        final screen = tester.widget<HighRiskScreen>(
+          find.byType(HighRiskScreen),
+        );
+        expect(screen.riskLevel, RelapseRiskLevel.high);
+        expect(screen.predictionSource, PredictionSource.machineLearning);
+        expect(find.text('High Risk'), findsOneWidget);
+        expect(find.text('Scored by: ML (Experimental)'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a saved rule-based fallback assessment is shown as rule-based, not ML',
+      (tester) async {
+        final logs = FakeCravingLogRepository();
+        await logs.logCraving(
+          sourcedRiskLog(RelapseRiskLevel.high, 'rule_based_fallback'),
+        );
+        await pumpDashboard(tester, cravingLogRepository: logs);
+        await openAlternativesFromBanner(tester);
+
+        expect(find.text('High Risk'), findsOneWidget);
+        expect(
+          find.text('Scored by: Rule-based (ML unavailable)'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('ML (Experimental)'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a craving saved before sources were stored shows High Risk without a source',
+      (tester) async {
+        final logs = FakeCravingLogRepository();
+        await logs.logCraving(sourcedRiskLog(RelapseRiskLevel.high, null));
+        await pumpDashboard(tester, cravingLogRepository: logs);
+        await openAlternativesFromBanner(tester);
+
+        expect(find.text('High Risk'), findsOneWidget);
+        expect(
+          find.byKey(const Key('craving_prediction_source')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'end to end: a High ML assessment shows the same result after Log Craving and from the banner',
+      (tester) async {
+        final logs = FakeCravingLogRepository();
+        final cravingController = CravingLogController(
+          logs,
+          FakeRelapsePredictionClient(
+            fixedRiskLevel: RelapseRiskLevel.high,
+            fixedSource: PredictionSource.machineLearning,
+          ),
+          now: () => fixedToday.subtract(const Duration(hours: 1)),
+        );
+        await pumpDashboard(
+          tester,
+          cravingLogRepository: logs,
+          cravingLogController: cravingController,
+        );
+        expect(
+          find.byKey(const Key('dashboard_high_risk_banner')),
+          findsNothing,
+        );
+
+        await logCravingFromDashboard(tester);
+        // Straight to Alternatives, showing the live result.
+        expect(find.byType(HighRiskScreen), findsOneWidget);
+        expect(find.text('High Risk'), findsOneWidget);
+        expect(find.text('Scored by: ML (Experimental)'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('high_risk_back_button')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('dashboard_high_risk_banner')),
+          findsOneWidget,
+        );
+
+        // Later, from the Dashboard alert: the same saved assessment.
+        await openAlternativesFromBanner(tester);
+        expect(find.text('High Risk'), findsOneWidget);
+        expect(find.text('Scored by: ML (Experimental)'), findsOneWidget);
+        final saved = await logs.getRecentLogs('u1', DateTime(2000));
+        expect(saved.single.relapseRiskScore, RelapseRiskLevel.high);
+        expect(saved.single.assessmentSource, 'machine_learning');
+      },
+    );
+
+    testWidgets(
+      'end to end: a Medium ML assessment shows its own result, no banner, and Alternatives shows no risk',
+      (tester) async {
+        final logs = FakeCravingLogRepository();
+        final cravingController = CravingLogController(
+          logs,
+          FakeRelapsePredictionClient(
+            fixedRiskLevel: RelapseRiskLevel.medium,
+            fixedSource: PredictionSource.machineLearning,
+          ),
+          now: () => fixedToday.subtract(const Duration(hours: 1)),
+        );
+        await pumpDashboard(
+          tester,
+          cravingLogRepository: logs,
+          cravingLogController: cravingController,
+        );
+
+        await logCravingFromDashboard(tester);
+        expect(find.byType(HighRiskScreen), findsNothing);
+        expect(find.text('Medium Risk'), findsOneWidget);
+        expect(find.text('Scored by: ML (Experimental)'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('craving_result_done_button')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('dashboard_high_risk_banner')),
+          findsNothing,
+        );
+        await tester.ensureVisible(
+          find.byKey(const Key('dashboard_quick_access_alternatives')),
+        );
+        await tester.tap(
+          find.byKey(const Key('dashboard_quick_access_alternatives')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(HighRiskScreen), findsOneWidget);
+        expect(
+          find.byKey(const Key('high_risk_assessment_result')),
+          findsNothing,
+        );
+        expect(find.text('High Risk'), findsNothing);
+        expect(find.text('Medium Risk'), findsNothing);
+        final saved = await logs.getRecentLogs('u1', DateTime(2000));
+        expect(saved.single.relapseRiskScore, RelapseRiskLevel.medium);
+        expect(saved.single.assessmentSource, 'machine_learning');
       },
     );
 

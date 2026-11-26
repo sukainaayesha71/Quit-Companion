@@ -100,6 +100,12 @@ class _HealthBotScreenState extends State<HealthBotScreen> {
         // first to see a helpline.
         actions: [
           IconButton(
+            key: const Key('healthbot_new_chat_button'),
+            tooltip: 'New chat',
+            onPressed: controller.canStartNewChat ? _startNewChat : null,
+            icon: const Icon(Icons.add_comment_outlined),
+          ),
+          IconButton(
             key: const Key('healthbot_crisis_support_button'),
             tooltip: 'Crisis support',
             onPressed: _openCrisisSupport,
@@ -158,7 +164,9 @@ class _HealthBotScreenState extends State<HealthBotScreen> {
                   'Health-Bot uses AI to provide general nicotine-cessation information. '
                   'It can make mistakes and cannot diagnose or replace a clinician. '
                   'Your messages are sent to Google Gemini and saved in your account history; '
-                  'avoid sharing identifying or highly sensitive details.',
+                  'so it can follow the conversation, your recent messages and basic quit details '
+                  '(product, quit approach and days since quitting) are sent too, never your '
+                  'name or contact details. Avoid sharing identifying or highly sensitive details.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppColors.textSecondary,
@@ -193,12 +201,29 @@ class _HealthBotScreenState extends State<HealthBotScreen> {
       );
     }
     if (controller.transcript.isEmpty) {
+      const prompt = Text(
+        'Ask about withdrawal symptoms like headaches, sleep, or irritability.',
+        key: Key('healthbot_empty_state'),
+        textAlign: TextAlign.center,
+        style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+      );
+      if (!controller.newChatStarted) return const Center(child: prompt);
       return const Center(
-        child: Text(
-          'Ask about withdrawal symptoms like headaches, sleep, or irritability.',
-          key: Key('healthbot_empty_state'),
-          textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              prompt,
+              SizedBox(height: 8),
+              Text(
+                'New chat started. Your earlier messages are still saved.',
+                key: Key('healthbot_new_chat_notice'),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -219,6 +244,14 @@ class _HealthBotScreenState extends State<HealthBotScreen> {
 
   void _openCrisisSupport() {
     Navigator.of(context).push(CrisisSupportScreen.route());
+  }
+
+  /// Fresh conversation: empty chat, no earlier context sent. Earlier
+  /// messages stay saved (said under the empty-chat prompt, where it
+  /// doesn't cover the input bar).
+  Future<void> _startNewChat() async {
+    _inputController.clear();
+    await widget.controller.startNewChat(widget.userId);
   }
 
   Widget _buildBubble(HealthBotMessage message, int index) {

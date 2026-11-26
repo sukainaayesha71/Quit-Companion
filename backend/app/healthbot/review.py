@@ -12,12 +12,17 @@ from datetime import datetime, timezone
 def content_digest() -> str:
     from .service import KNOWLEDGE_BASE, EMERGENCY_RESPONSE_TEXT
     from .sources import TOPIC_SOURCES, GENERAL_SOURCES
+    from .knowledge import CONVERSATIONAL_KNOWLEDGE, RETRIEVAL_SYNONYMS
     from ..coaching.service import ACTIONS
     # Sources shown to users are reviewable content too (FR8).
     sources = {topic: [[s.title, s.url] for s in group]
                for topic, group in {**TOPIC_SOURCES, "_general": GENERAL_SOURCES}.items()}
+    # The retrieval notes Gemini answers from are reviewable content as well.
+    notes = [[e.id, e.title, e.text, [[s.title, s.url] for s in e.sources], list(e.keywords)]
+             for e in CONVERSATIONAL_KNOWLEDGE]
     content = json.dumps({"knowledge": KNOWLEDGE_BASE, "actions": ACTIONS,
-                          "emergency": EMERGENCY_RESPONSE_TEXT, "sources": sources}, sort_keys=True)
+                          "emergency": EMERGENCY_RESPONSE_TEXT, "sources": sources,
+                          "notes": notes, "synonyms": RETRIEVAL_SYNONYMS}, sort_keys=True)
     return hashlib.sha256(content.encode()).hexdigest()
 
 

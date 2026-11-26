@@ -2,7 +2,8 @@
 
 Every URL below was fetched on 2026-11-23 (HTTP 200, no redirect) and its
 page confirmed to cover the topic it is attached to. Only public-health
-agencies are used: CDC, NCI (cancer.gov), NCI's Smokefree.gov and the NHS.
+agencies are used: CDC, NCI (cancer.gov), NCI's Smokefree.gov and the NHS,
+plus WHO for the conversational knowledge notes (knowledge.py).
 
 Rules:
 - Emergency answers carry no sources: the fixed escalation text stands alone.
@@ -68,6 +69,51 @@ CDC_VAPING_QUITTING = TrustedSource(
     "https://www.cdc.gov/tobacco/e-cigarettes/quitting.html",
 )
 
+# Sources for the conversational knowledge in knowledge.py. Each page was
+# confirmed live (HTTP 200) on 2026-11-25 and the facts used from it were
+# read from the page itself on 2026-11-26.
+WHO_CESSATION_BENEFITS = TrustedSource(
+    "Tobacco: Health benefits of smoking cessation (WHO)",
+    "https://www.who.int/news-room/questions-and-answers/item/tobacco-health-benefits-of-smoking-cessation",
+)
+NCI_HARMS_AND_BENEFITS = TrustedSource(
+    "Harms of Cigarette Smoking and Health Benefits of Quitting (National Cancer Institute)",
+    "https://www.cancer.gov/about-cancer/causes-prevention/risk/tobacco/cessation-fact-sheet",
+)
+SMOKEFREE_CRAVINGS = TrustedSource(
+    "How to Manage Cravings (Smokefree.gov, NCI)",
+    "https://smokefree.gov/challenges-when-quitting/cravings-triggers/how-manage-cravings",
+)
+SMOKEFREE_NUTRITION = TrustedSource(
+    "Nutrition & Appetite While Quitting (Smokefree.gov, NCI)",
+    "https://smokefree.gov/challenges-when-quitting/weight-gain-appetite/nutrition-appetite-while-quitting",
+)
+SMOKEFREE_STRESS = TrustedSource(
+    "Smoking and Stress (Smokefree.gov, NCI)",
+    "https://smokefree.gov/challenges-when-quitting/stress/stress-smoking",
+)
+NHS_MENTAL_HEALTH = TrustedSource(
+    "Stopping smoking for your mental health (NHS)",
+    "https://www.nhs.uk/live-well/quit-smoking/stopping-smoking-mental-health-benefits/",
+)
+SMOKEFREE_QUIT_PLAN = TrustedSource(
+    "Build a Plan to Quit Smoking or Vaping (Smokefree.gov, NCI)",
+    "https://smokefree.gov/build-your-quit-plan",
+)
+CDC_VAPING_HEALTH = TrustedSource(
+    "Health Effects of Vaping (CDC)",
+    "https://www.cdc.gov/tobacco/e-cigarettes/health-effects.html",
+)
+NHS_ECIGARETTES = TrustedSource(
+    "Using e-cigarettes to stop smoking (NHS)",
+    "https://www.nhs.uk/live-well/quit-smoking/using-e-cigarettes-to-stop-smoking/",
+)
+# Fetched 2026-11-26 (HTTP 200, no redirect; page dated 2025-01-31).
+CDC_NICOTINE_POUCHES = TrustedSource(
+    "Nicotine Pouches (CDC)",
+    "https://www.cdc.gov/tobacco/nicotine-pouches/index.html",
+)
+
 ALL_SOURCES: tuple[TrustedSource, ...] = (
     SMOKEFREE_WITHDRAWAL,
     NCI_WITHDRAWAL,
@@ -79,6 +125,16 @@ ALL_SOURCES: tuple[TrustedSource, ...] = (
     CDC_SECONDHAND,
     SMOKEFREE_VAPING_WITHDRAWAL,
     CDC_VAPING_QUITTING,
+    WHO_CESSATION_BENEFITS,
+    NCI_HARMS_AND_BENEFITS,
+    SMOKEFREE_CRAVINGS,
+    SMOKEFREE_NUTRITION,
+    SMOKEFREE_STRESS,
+    NHS_MENTAL_HEALTH,
+    SMOKEFREE_QUIT_PLAN,
+    CDC_VAPING_HEALTH,
+    NHS_ECIGARETTES,
+    CDC_NICOTINE_POUCHES,
 )
 
 _WITHDRAWAL = (SMOKEFREE_WITHDRAWAL, NCI_WITHDRAWAL)

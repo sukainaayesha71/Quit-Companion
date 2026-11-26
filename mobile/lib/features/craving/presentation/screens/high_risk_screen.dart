@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:quit_companion/features/craving/controllers/alternatives_controller.dart';
 import 'package:quit_companion/features/craving/models/habit_alternative.dart';
+import 'package:quit_companion/features/craving/models/relapse_risk_level.dart';
 import 'package:quit_companion/features/journal/models/mood.dart';
 import 'package:quit_companion/features/craving/models/trigger_category.dart';
 import 'package:quit_companion/core/theme/app_theme.dart';
@@ -99,8 +100,14 @@ class HighRiskScreen extends StatefulWidget {
   final Mood mood;
   final AlternativesController controller;
 
-  /// Set when reached from a scored craving: shows how the high risk level
-  /// was produced. Null when browsed from the Alternatives tile/banner.
+  /// Set when reached from a scored craving (the Log Craving redirect or the
+  /// Dashboard's high-risk alert): that assessment's saved risk level,
+  /// shown in the header. Null when browsed from the Alternatives tile, so
+  /// no result is shown without an assessment.
+  final RelapseRiskLevel? riskLevel;
+
+  /// How that same assessment was produced, as reported by the backend;
+  /// shown as "Scored by: ...". Null or unknown shows no source label.
   final PredictionSource? predictionSource;
 
   const HighRiskScreen({
@@ -109,6 +116,7 @@ class HighRiskScreen extends StatefulWidget {
     required this.triggerCategory,
     required this.mood,
     required this.controller,
+    this.riskLevel,
     this.predictionSource,
   });
 
@@ -167,7 +175,10 @@ class _HighRiskScreenState extends State<HighRiskScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Header(predictionSource: widget.predictionSource),
+              _Header(
+                riskLevel: widget.riskLevel,
+                predictionSource: widget.predictionSource,
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
                 child: Column(
@@ -209,6 +220,25 @@ class _HighRiskScreenState extends State<HighRiskScreen> {
                         child: CircularProgressIndicator(),
                       )
                     else ...[
+                      if (controller.rankingSource != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Text(
+                            controller.rankingSource ==
+                                    RecommendationRankingSource
+                                        .personalisedModel
+                                ? 'Ordered for you by your personalised '
+                                      'recommendation model.'
+                                : "Ordered on your device with simple rules: "
+                                      "the personalised model couldn't be "
+                                      'reached right now.',
+                            key: const Key('high_risk_ranking_source'),
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ),
                       if (controller.historyErrorMessage != null)
                         const Padding(
                           padding: EdgeInsets.only(bottom: 14),
@@ -252,9 +282,10 @@ class _HighRiskScreenState extends State<HighRiskScreen> {
 }
 
 class _Header extends StatelessWidget {
+  final RelapseRiskLevel? riskLevel;
   final PredictionSource? predictionSource;
 
-  const _Header({this.predictionSource});
+  const _Header({this.riskLevel, this.predictionSource});
 
   @override
   Widget build(BuildContext context) {
@@ -297,12 +328,22 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        if (predictionSource?.label != null)
+        if (riskLevel != null || predictionSource?.label != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: PredictionSourceLabel(source: predictionSource),
+              child: Wrap(
+                key: const Key('high_risk_assessment_result'),
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (riskLevel != null) _RiskLevelPill(riskLevel: riskLevel!),
+                  if (predictionSource?.label != null)
+                    PredictionSourceLabel(source: predictionSource),
+                ],
+              ),
             ),
           ),
         Container(
@@ -507,6 +548,65 @@ class _AlternativeCard extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// The assessment's saved risk level, in the same pill style as
+/// PredictionSourceLabel and the same wording and colours as the Log
+/// Craving result card (RiskResultBanner).
+class _RiskLevelPill extends StatelessWidget {
+  final RelapseRiskLevel riskLevel;
+
+  const _RiskLevelPill({required this.riskLevel});
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, icon) = switch (riskLevel) {
+      RelapseRiskLevel.low => (
+        'Low Risk',
+        AppColors.sageDark,
+        Icons.check_circle_outline,
+      ),
+      RelapseRiskLevel.medium => (
+        'Medium Risk',
+        AppColors.terracottaDark,
+        Icons.info_outline,
+      ),
+      RelapseRiskLevel.high => (
+        'High Risk',
+        AppColors.error,
+        Icons.warning_amber_rounded,
+      ),
+    };
+    return Semantics(
+      label: 'Assessment result: $label',
+      excludeSemantics: true,
+      child: Container(
+        key: const Key('high_risk_assessment_level'),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -30,6 +30,14 @@ class CravingLog {
   final DateTime timestamp;
   final RelapseRiskLevel relapseRiskScore;
   final bool riskAssessmentPending;
+
+  /// Which method actually produced [relapseRiskScore], as the backend
+  /// reported it ('machine_learning', 'rule_based', 'rule_based_fallback');
+  /// read with parsePredictionSource. Stored under `assessmentSource`, the
+  /// field the backend worker already writes when it re-scores a pending
+  /// craving. Null for a still-pending assessment and for records saved
+  /// before the app stored it, which then show no "Scored by" label.
+  final String? assessmentSource;
   final Map<String, double> recoveryContext;
   final bool? nicotineUsedSinceLastCheckin;
 
@@ -59,6 +67,7 @@ class CravingLog {
     required this.timestamp,
     required this.relapseRiskScore,
     this.riskAssessmentPending = false,
+    this.assessmentSource,
     this.recoveryContext = const {},
     this.nicotineUsedSinceLastCheckin,
     this.moodHappy,

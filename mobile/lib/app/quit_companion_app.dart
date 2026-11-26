@@ -14,7 +14,6 @@ import 'package:quit_companion/features/health_bot/controllers/health_bot_contro
 import 'package:quit_companion/features/journal/controllers/journal_controller.dart';
 import 'package:quit_companion/features/knowledge/controllers/knowledge_hub_controller.dart';
 import 'package:quit_companion/features/onboarding/controllers/onboarding_controller.dart';
-import 'package:quit_companion/features/auth/controllers/phone_auth_controller.dart';
 import 'package:quit_companion/features/profile/controllers/profile_controller.dart';
 import 'package:quit_companion/features/relapse/controllers/relapse_controller.dart';
 import 'package:quit_companion/features/reminders/controllers/reminder_controller.dart';
@@ -22,13 +21,11 @@ import 'package:quit_companion/features/tracking/controllers/track_controller.da
 import 'package:quit_companion/features/onboarding/models/product_type.dart';
 import 'package:quit_companion/features/knowledge/data/article_bookmark_repository.dart';
 import 'package:quit_companion/features/auth/data/auth_repository.dart';
-import 'package:quit_companion/features/auth/data/phone_auth_repository.dart';
 import 'package:quit_companion/features/rewards/data/badge_repository.dart';
 import 'package:quit_companion/features/community/data/community_post_repository.dart';
 import 'package:quit_companion/features/craving/data/craving_log_repository.dart';
 import 'package:quit_companion/features/craving/data/offline_craving_log_repository.dart';
 import 'package:quit_companion/features/goals/data/coaching_client.dart';
-import 'package:quit_companion/features/auth/data/default_phone_auth_repository.dart';
 import 'package:quit_companion/features/auth/data/firebase_auth_repository.dart';
 import 'package:quit_companion/features/knowledge/data/firestore_article_bookmark_repository.dart';
 import 'package:quit_companion/features/rewards/data/firestore_badge_repository.dart';
@@ -40,9 +37,11 @@ import 'package:quit_companion/features/journal/data/firestore_journal_repositor
 import 'package:quit_companion/features/craving/data/habit_alternative_attempt_repository.dart';
 import 'package:quit_companion/features/tracking/data/firestore_usage_log_repository.dart';
 import 'package:quit_companion/features/profile/data/firestore_user_repository.dart';
+import 'package:quit_companion/features/health_bot/data/health_bot_chat_session_store.dart';
 import 'package:quit_companion/features/health_bot/data/health_bot_client.dart';
 import 'package:quit_companion/features/health_bot/data/health_bot_repository.dart';
 import 'package:quit_companion/features/health_bot/data/http_health_bot_client.dart';
+import 'package:quit_companion/features/health_bot/domain/health_bot_user_context.dart';
 import 'package:quit_companion/features/relapse/data/http_relapse_prediction_client.dart';
 import 'package:quit_companion/features/journal/data/journal_repository.dart';
 import 'package:quit_companion/features/reminders/data/local_reminder_notification_service.dart';
@@ -58,8 +57,6 @@ import 'package:quit_companion/features/onboarding/domain/quit_date_calculator.d
 import 'package:quit_companion/features/relapse/domain/restart_plan_calculator.dart';
 import 'package:quit_companion/features/goals/domain/weekly_plan_calculator.dart';
 import 'package:quit_companion/features/auth/presentation/screens/login_screen.dart';
-import 'package:quit_companion/features/auth/presentation/screens/otp_verification_screen.dart';
-import 'package:quit_companion/features/auth/presentation/screens/phone_sign_in_screen.dart';
 import 'package:quit_companion/features/auth/presentation/screens/register_screen.dart';
 import 'package:quit_companion/features/auth/presentation/screens/welcome_screen.dart';
 import 'package:quit_companion/features/onboarding/presentation/screens/consent_screen.dart';
@@ -77,7 +74,6 @@ class QuitCompanionApp extends StatelessWidget {
   // Tests inject FakeAuthRepository/FakeUserRepository here instead of hitting
   // live Firebase — see test/app_flow_test.dart.
   final AuthRepository? authRepository;
-  final PhoneAuthRepository? phoneAuthRepository;
   final UserRepository? userRepository;
   final UsageLogRepository? usageLogRepository;
   final CravingLogRepository? cravingLogRepository;
@@ -98,7 +94,6 @@ class QuitCompanionApp extends StatelessWidget {
   const QuitCompanionApp({
     super.key,
     this.authRepository,
-    this.phoneAuthRepository,
     this.userRepository,
     this.usageLogRepository,
     this.cravingLogRepository,
@@ -130,9 +125,8 @@ class QuitCompanionApp extends StatelessWidget {
     final resolvedJournalRepository =
         journalRepository ?? FirestoreJournalRepository();
     // Shared between every controller below AND _OnboardingFlow itself,
-    // which needs to look up a phone/OTP sign-in's existing profile
-    // directly (see _OnboardingFlow's onVerified handling) to decide
-    // whether that account still needs onboarding.
+    // which looks up a signed-in account's existing profile directly to
+    // decide whether that account still needs onboarding.
     final resolvedUserRepository = userRepository ?? FirestoreUserRepository();
     final resolvedAuthRepository = authRepository ?? FirebaseAuthRepository();
     final coachingClient = authRepository == null
@@ -233,6 +227,13 @@ class QuitCompanionApp extends StatelessWidget {
                 HttpHealthBotClient(baseUrl: OtpBackendConfig.baseUrl),
             healthBotRepository ?? FirestoreHealthBotRepository(),
             currentDisplayName: () => resolvedAuthRepository.currentDisplayName,
+            chatSessionStore: SharedPreferencesHealthBotChatSessionStore(),
+            loadUserContext: (userId) async {
+              final user = await resolvedUserRepository.getUser(userId);
+              return user == null
+                  ? null
+                  : healthBotContextFor(user, DateTime.now());
+            },
           ),
         ),
         ChangeNotifierProvider(
@@ -286,7 +287,6 @@ class QuitCompanionApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
         home: _OnboardingFlow(
-          phoneAuthRepository: phoneAuthRepository,
           userRepository: resolvedUserRepository,
           authRepository: resolvedAuthRepository,
           biometricLockService: biometricLockService,
@@ -301,8 +301,6 @@ enum _Step {
   welcome,
   register,
   login,
-  phoneEntry,
-  phoneOtp,
   consent,
   restoring,
   biometricGate,
@@ -315,14 +313,12 @@ enum _Step {
 }
 
 class _OnboardingFlow extends StatefulWidget {
-  final PhoneAuthRepository? phoneAuthRepository;
   final UserRepository userRepository;
   final AuthRepository authRepository;
   final BiometricLockService biometricLockService;
   final AccountDeletionRepository accountDeletionRepository;
 
   const _OnboardingFlow({
-    this.phoneAuthRepository,
     required this.userRepository,
     required this.authRepository,
     required this.biometricLockService,
@@ -341,17 +337,6 @@ class _OnboardingFlowState extends State<_OnboardingFlow>
   ProductType? _selectedProductType;
   String? _selectedUnitLabel;
 
-  // Phone/OTP sign-in (FR1): lazily created only when the user actually
-  // taps "Or continue with Phone Number" — never touched otherwise, so
-  // existing email/Google flows and their tests are unaffected. Held here
-  // (not in MultiProvider) to match the same pattern already used for
-  // _loggedInUserId/_pendingPhoneNumber, and because it must survive the
-  // Login <-> Register <-> PhoneSignIn <-> OtpVerification hand-off as one
-  // continuous session, same as the pre-existing PhoneAuthController itself
-  // already assumes (see its class doc).
-  PhoneAuthController? _phoneAuthController;
-  String? _pendingPhoneNumber;
-  _Step _phoneEntryReturnStep = _Step.login;
   bool _isAuthenticatingBiometric = false;
   String? _biometricError;
 
@@ -369,7 +354,6 @@ class _OnboardingFlowState extends State<_OnboardingFlow>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _phoneAuthController?.dispose();
     super.dispose();
   }
 
@@ -385,11 +369,6 @@ class _OnboardingFlowState extends State<_OnboardingFlow>
       _authenticateToUnlock();
     }
   }
-
-  PhoneAuthController get _resolvedPhoneAuthController =>
-      _phoneAuthController ??= PhoneAuthController(
-        widget.phoneAuthRepository ?? createDefaultPhoneAuthRepository(),
-      );
 
   @override
   Widget build(BuildContext context) {
@@ -430,13 +409,6 @@ class _OnboardingFlowState extends State<_OnboardingFlow>
             context.read<AuthController>().clearError();
             setState(() => _step = _Step.login);
           },
-          onPhoneSignInTap: () {
-            _phoneAuthController?.reset();
-            setState(() {
-              _phoneEntryReturnStep = _Step.register;
-              _step = _Step.phoneEntry;
-            });
-          },
         );
       case _Step.login:
         return LoginScreen(
@@ -450,29 +422,6 @@ class _OnboardingFlowState extends State<_OnboardingFlow>
             context.read<AuthController>().clearError();
             setState(() => _step = _Step.register);
           },
-          onPhoneSignInTap: () {
-            _phoneAuthController?.reset();
-            setState(() {
-              _phoneEntryReturnStep = _Step.login;
-              _step = _Step.phoneEntry;
-            });
-          },
-        );
-      case _Step.phoneEntry:
-        return PhoneSignInScreen(
-          controller: _resolvedPhoneAuthController,
-          isRegistration: _phoneEntryReturnStep == _Step.register,
-          onBack: () => setState(() => _step = _phoneEntryReturnStep),
-          onOtpSent: (phoneNumber) => setState(() {
-            _pendingPhoneNumber = phoneNumber;
-            _step = _Step.phoneOtp;
-          }),
-        );
-      case _Step.phoneOtp:
-        return OtpVerificationScreen(
-          phoneNumber: _pendingPhoneNumber ?? '',
-          phoneAuthController: _resolvedPhoneAuthController,
-          onVerified: (userId) => _onPhoneVerified(userId),
         );
       case _Step.loggedIn:
         return DashboardScreen(
@@ -768,12 +717,6 @@ class _OnboardingFlowState extends State<_OnboardingFlow>
       });
     }
   }
-
-  Future<void> _onPhoneVerified(String userId) => _continueWithAccount(
-    userId: userId,
-    email: widget.authRepository.currentEmail ?? '',
-    name: widget.authRepository.currentDisplayName,
-  );
 }
 
 class _BiometricUnlockScreen extends StatelessWidget {

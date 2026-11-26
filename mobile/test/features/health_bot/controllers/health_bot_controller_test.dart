@@ -150,16 +150,14 @@ void main() {
 
         await controller.sendQuery(userId: 'u1', text: 'hello');
 
-        // FR8: the reply is clean curated guidance; the specific,
-        // actionable reason is shown as a separate note, not glued to it.
+        // The reply is an honest "no answer" with Try again; server error
+        // text is kept for diagnostics but never shown under the reply.
         expect(
           controller.transcript.last.text,
-          LocalHealthBotFallback.generalGuidance,
+          LocalHealthBotFallback.unavailableText,
         );
-        expect(
-          controller.transcript.last.note,
-          'Invalid or expired Firebase ID token.',
-        );
+        expect(controller.transcript.last.note, isNull);
+        expect(controller.transcript.last.retryQuery, 'hello');
         expect(
           controller.errorMessage,
           'Invalid or expired Firebase ID token.',

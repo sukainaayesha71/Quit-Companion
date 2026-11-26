@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:quit_companion/shared/widgets/action_progress.dart';
+import 'package:quit_companion/shared/widgets/empty_state_message.dart';
 import 'package:quit_companion/features/community/controllers/community_controller.dart';
 import 'package:quit_companion/shared/domain/relative_time_formatter.dart';
 import 'package:quit_companion/features/community/models/community_post.dart';
@@ -231,23 +232,35 @@ class _CommunityScreenState extends State<CommunityScreen> {
       );
     }
     if (controller.status == CommunityStatus.error) {
-      return Center(
-        child: Text(
-          controller.errorMessage ?? 'Something went wrong.',
-          key: const Key('community_error_text'),
-          style: const TextStyle(color: AppColors.error, fontSize: 14),
-          textAlign: TextAlign.center,
+      return EmptyStateMessage(
+        key: const Key('community_error_state'),
+        icon: Icons.cloud_off_rounded,
+        title: "Couldn't load posts",
+        message:
+            controller.errorMessage ?? CommunityController.feedErrorMessage,
+        messageKey: const Key('community_error_text'),
+        actionLabel: 'Try again',
+        actionKey: const Key('community_retry_button'),
+        onAction: () => controller.startFeed(
+          userId: widget.userId,
+          category: controller.filter,
         ),
+        isError: true,
       );
     }
     if (controller.posts.isEmpty) {
-      return const Center(
-        child: Text(
-          'No posts yet — be the first to share something.',
-          key: Key('community_empty_state'),
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
-          textAlign: TextAlign.center,
-        ),
+      return EmptyStateMessage(
+        key: const Key('community_empty_state'),
+        icon: Icons.forum_outlined,
+        title: controller.filter == null
+            ? 'No posts yet'
+            : 'No posts in this category yet',
+        message:
+            'Be the first to share a tip, a milestone or a question with '
+            'others on the same journey.',
+        actionLabel: 'Create a post',
+        actionKey: const Key('community_empty_create_button'),
+        onAction: _openNewPost,
       );
     }
     return ListView.separated(

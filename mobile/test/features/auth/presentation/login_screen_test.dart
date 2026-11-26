@@ -336,35 +336,8 @@ void main() {
     },
   );
 
-  testWidgets('tapping the phone sign-in link invokes onPhoneSignInTap', (
-    tester,
-  ) async {
-    final controller = AuthController(FakeAuthRepository());
-    var tapped = false;
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AuthController>.value(
-        value: controller,
-        child: MaterialApp(
-          home: LoginScreen(
-            onLoggedIn: (_, _) {},
-            onPhoneSignInTap: () => tapped = true,
-          ),
-        ),
-      ),
-    );
-
-    await tester.ensureVisible(
-      find.byKey(const Key('login_phone_sign_in_link')),
-    );
-    await tester.tap(find.byKey(const Key('login_phone_sign_in_link')));
-    await tester.pumpAndSettle();
-
-    expect(tapped, isTrue);
-  });
-
   testWidgets(
-    'the phone sign-in link is absent when onPhoneSignInTap is not provided',
+    'offers email/password and Google sign-in only, with no phone option',
     (tester) async {
       final controller = AuthController(FakeAuthRepository());
 
@@ -375,7 +348,11 @@ void main() {
         ),
       );
 
+      expect(find.byKey(const Key('login_email_field')), findsOneWidget);
+      expect(find.byKey(const Key('login_password_field')), findsOneWidget);
+      expect(find.byKey(const Key('login_google_button')), findsOneWidget);
       expect(find.byKey(const Key('login_phone_sign_in_link')), findsNothing);
+      expect(find.textContaining('Phone'), findsNothing);
     },
   );
 

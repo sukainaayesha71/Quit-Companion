@@ -66,6 +66,30 @@ class CravingLogController extends ChangeNotifier {
     _lastSupportPromptAt = now();
   }
 
+  /// Bumped by [startNewEntry]. A submission that finishes after a new
+  /// entry was started still saves its craving log, but no longer changes
+  /// the result shown on screen.
+  int _entrySession = 0;
+
+  /// Starts a new, separate craving assessment. This controller lives for
+  /// the whole app session, so without this a reopened Log Craving screen
+  /// showed the previous submission's result (or error) instead of an empty
+  /// form. Clears only that in-memory result state: saved craving logs and
+  /// their risk results are untouched, and the professional-support prompt
+  /// cooldown is kept.
+  ///
+  /// Doesn't notify listeners: it is called from the new screen's
+  /// initState, which builds from these values directly.
+  void startNewEntry() {
+    _entrySession++;
+    status = CravingLogStatus.idle;
+    errorMessage = null;
+    lastRiskLevel = null;
+    assessmentPending = false;
+    lastPredictionSource = null;
+    suggestProfessionalSupport = false;
+  }
+
   Future<bool> submitCraving({
     required String userId,
     required int intensity,
@@ -90,6 +114,7 @@ class CravingLogController extends ChangeNotifier {
     double? moodSad,
     double? moodBored,
   }) async {
+    final session = _entrySession;
     status = CravingLogStatus.submitting;
     errorMessage = null;
     suggestProfessionalSupport = false;
@@ -107,8 +132,10 @@ class CravingLogController extends ChangeNotifier {
       } catch (_) {
         /* Local capture must remain available offline. */
       }
-      assessmentPending = false;
-      lastPredictionSource = null;
+      // Kept local until the end, so a submission that finishes after a
+      // new entry started can't leak its result into that entry.
+      var pending = false;
+      PredictionSource? source;
       RelapseRiskLevel riskLevel;
       final predictionTimer = Stopwatch()..start();
       try {
@@ -140,7 +167,7 @@ class CravingLogController extends ChangeNotifier {
               },
             );
         riskLevel = prediction.riskLevel;
-        lastPredictionSource = prediction.source;
+        source = prediction.source;
       } on RelapsePredictionException catch (e) {
         // A craving log is worth saving even when the risk-scoring backend
         // is down — losing the user's entry entirely (the previous
@@ -151,10 +178,10 @@ class CravingLogController extends ChangeNotifier {
           'CravingLogController.submitCraving: prediction failed, saving with fallback risk level: $e',
         );
         riskLevel = _fallbackRiskLevelOnPredictionFailure;
-        assessmentPending = true;
+        pending = true;
       }
       logPerf(
-        assessmentPending ? 'relapse_prediction_failed' : 'relapse_prediction',
+        pending ? 'relapse_prediction_failed' : 'relapse_prediction',
         predictionTimer.elapsed,
       );
       final log = CravingLog(
@@ -168,7 +195,10 @@ class CravingLogController extends ChangeNotifier {
         notes: notes,
         timestamp: timestamp,
         relapseRiskScore: riskLevel,
-        riskAssessmentPending: assessmentPending,
+        riskAssessmentPending: pending,
+        // What actually scored it, from the backend response (null while
+        // pending: the fallback level was not scored by anything).
+        assessmentSource: pending ? null : source?.wireName,
         recoveryContext: recoveryContext,
         nicotineUsedSinceLastCheckin: nicotineUsedSinceLastCheckin,
         moodHappy: moodHappy,
@@ -183,9 +213,14 @@ class CravingLogController extends ChangeNotifier {
         moodBored: moodBored,
       );
       await _cravingLogRepository.logCraving(log);
-      suggestProfessionalSupport = await _shouldSuggestSupport(userId, log);
+      final suggestSupport = await _shouldSuggestSupport(userId, log);
       // Not awaited: the scheduler never throws and must not slow saving.
       pendingCheckIn = checkInScheduler?.onCravingLogged(userId, log);
+      // Saved either way; only the entry that is still open shows a result.
+      if (session != _entrySession) return true;
+      assessmentPending = pending;
+      lastPredictionSource = source;
+      suggestProfessionalSupport = suggestSupport;
       lastRiskLevel = riskLevel;
       status = CravingLogStatus.success;
       notifyListeners();
@@ -195,6 +230,7 @@ class CravingLogController extends ChangeNotifier {
       // requiring inference — the earlier physical-device diagnosis had no
       // way to confirm what actually failed here.
       debugPrint('CravingLogController.submitCraving failed: $e');
+      if (session != _entrySession) return false;
       errorMessage =
           'Could not log this craving. Check your connection and try again.';
       status = CravingLogStatus.error;

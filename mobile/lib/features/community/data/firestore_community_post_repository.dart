@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:quit_companion/features/community/models/community_post.dart';
 import 'package:quit_companion/features/community/models/community_reply.dart';
 import 'package:quit_companion/features/community/models/post_category.dart';
@@ -56,22 +57,12 @@ class FirestoreCommunityPostRepository implements CommunityPostRepository {
           final counts = <String, int>{};
           void emit() {
             if (controller.isClosed || current != generation) return;
-            controller.add(
-              snapshot.docs.map((doc) {
-                final data = doc.data();
-                return CommunityPost(
-                  postId: doc.id,
-                  userId: data['userId'] as String,
-                  anonymizedUsername: data['anonymizedUsername'] as String,
-                  content: data['content'] as String,
-                  category: PostCategory.values.firstWhere(
-                    (c) => c.name == data['category'],
-                  ),
-                  timestamp: DateTime.parse(data['timestamp'] as String),
-                  likeCount: counts[doc.id] ?? 0,
-                );
-              }).toList(),
-            );
+            final posts = <CommunityPost>[];
+            for (final doc in snapshot.docs) {
+              final post = _postFrom(doc.id, doc.data(), counts[doc.id] ?? 0);
+              if (post != null) posts.add(post);
+            }
+            controller.add(posts);
           }
 
           emit();
@@ -96,25 +87,55 @@ class FirestoreCommunityPostRepository implements CommunityPostRepository {
     return controller.stream;
   }
 
+  /// One malformed document must not take down the whole feed: it is
+  /// skipped (and logged) instead of throwing inside the snapshot listener,
+  /// where the error would never reach the screen.
+  CommunityPost? _postFrom(String id, Map<String, dynamic> data, int likes) {
+    try {
+      return CommunityPost(
+        postId: id,
+        userId: data['userId'] as String,
+        anonymizedUsername: data['anonymizedUsername'] as String,
+        content: data['content'] as String,
+        category: PostCategory.values.firstWhere(
+          (c) => c.name == data['category'],
+        ),
+        timestamp: DateTime.parse(data['timestamp'] as String),
+        likeCount: likes,
+      );
+    } catch (e) {
+      debugPrint('Skipping malformed community post $id: $e');
+      return null;
+    }
+  }
+
   @override
   Stream<List<CommunityReply>> watchReplies(String postId) => _posts
       .doc(postId)
       .collection('replies')
       .orderBy('timestamp')
       .snapshots()
-      .map(
-        (snapshot) => snapshot.docs.map((doc) {
-          final data = doc.data();
-          return CommunityReply(
-            replyId: doc.id,
-            postId: postId,
-            userId: data['userId'] as String,
-            anonymizedUsername: data['anonymizedUsername'] as String,
-            content: data['content'] as String,
-            timestamp: DateTime.parse(data['timestamp'] as String),
-          );
-        }).toList(),
-      );
+      .map((snapshot) {
+        final replies = <CommunityReply>[];
+        for (final doc in snapshot.docs) {
+          try {
+            final data = doc.data();
+            replies.add(
+              CommunityReply(
+                replyId: doc.id,
+                postId: postId,
+                userId: data['userId'] as String,
+                anonymizedUsername: data['anonymizedUsername'] as String,
+                content: data['content'] as String,
+                timestamp: DateTime.parse(data['timestamp'] as String),
+              ),
+            );
+          } catch (e) {
+            debugPrint('Skipping malformed reply ${doc.id}: $e');
+          }
+        }
+        return replies;
+      });
 
   @override
   Future<void> createPost(CommunityPost post) async {
@@ -139,21 +160,9 @@ class FirestoreCommunityPostRepository implements CommunityPostRepository {
     final snapshot = await query.get();
     final results = <CommunityPost>[];
     for (final doc in snapshot.docs) {
-      final data = doc.data();
       final likesSnapshot = await _posts.doc(doc.id).collection('likes').get();
-      results.add(
-        CommunityPost(
-          postId: doc.id,
-          userId: data['userId'] as String,
-          anonymizedUsername: data['anonymizedUsername'] as String,
-          content: data['content'] as String,
-          category: PostCategory.values.firstWhere(
-            (c) => c.name == data['category'],
-          ),
-          timestamp: DateTime.parse(data['timestamp'] as String),
-          likeCount: likesSnapshot.docs.length,
-        ),
-      );
+      final post = _postFrom(doc.id, doc.data(), likesSnapshot.docs.length);
+      if (post != null) results.add(post);
     }
     return results;
   }

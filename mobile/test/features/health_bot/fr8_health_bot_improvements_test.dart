@@ -54,22 +54,21 @@ void main() {
     );
 
     test(
-      'other questions get clean, non-diagnostic general guidance with sources, marked offline',
+      'other questions get an honest "no answer" reply, never a generic '
+      'health paragraph, marked offline',
       () {
-        final answer = fallback.answer('why am I so tired');
-        expect(answer.type, HealthBotAnswerType.matched);
-        // No technical prefix in the text; the origin is a separate field.
-        expect(answer.responseText, LocalHealthBotFallback.generalGuidance);
-        expect(answer.source, HealthBotAnswerSource.offline);
-        expect(answer.responseText, contains('check with a doctor'));
-        expect(answer.sources, LocalHealthBotFallback.generalSources);
-        expect(answer.isLocalFallback, isTrue);
-        for (final word in ['you have', 'diagnos', 'mg', 'dose']) {
-          expect(
-            answer.responseText.toLowerCase().contains(word),
-            isFalse,
-            reason: word,
-          );
+        for (final query in [
+          'why am I so tired',
+          'how do I handle cravings at work',
+          'is this normal?',
+        ]) {
+          final answer = fallback.answer(query);
+          expect(answer.type, HealthBotAnswerType.unmatched, reason: query);
+          expect(answer.responseText, LocalHealthBotFallback.unavailableText);
+          expect(answer.responseText, isNot(contains('withdrawal')));
+          expect(answer.source, HealthBotAnswerSource.offline);
+          expect(answer.sources, isEmpty);
+          expect(answer.isLocalFallback, isTrue);
         }
       },
     );
@@ -78,14 +77,6 @@ void main() {
       final answer = fallback.answer('I want to end my life');
       expect(answer.source, HealthBotAnswerSource.safety);
       expect(answer.isLocalFallback, isTrue);
-    });
-
-    test('general sources are https public-health pages', () {
-      for (final source in LocalHealthBotFallback.generalSources) {
-        final host = Uri.parse(source.url).host;
-        expect(source.url, startsWith('https://'));
-        expect(['www.cdc.gov', 'www.cancer.gov'], contains(host));
-      }
     });
   });
 
@@ -211,7 +202,7 @@ void main() {
     );
 
     test(
-      'a backend timeout produces the curated fallback, not an error bubble',
+      'a backend timeout produces an honest retry reply, not an error bubble',
       () async {
         final client = FakeHealthBotClient()
           ..failWith = HealthBotTimeoutException(
@@ -225,12 +216,13 @@ void main() {
         await controller.sendQuery(userId: 'u1', text: 'why am I so tired');
 
         final reply = controller.transcript.last;
-        // Clean guidance first; the slow backend is explained by a short
-        // offline note instead of a raw technical line in the reply.
-        expect(reply.text, LocalHealthBotFallback.generalGuidance);
-        expect(reply.note, HealthBotController.offlineNote);
+        // No repeated generic paragraph and no technical note: the reply
+        // says it couldn't answer and offers "Try again".
+        expect(reply.text, HealthBotController.noAnswerText);
+        expect(reply.note, isNull);
+        expect(reply.retryQuery, 'why am I so tired');
         expect(reply.isEmergency, isFalse);
-        expect(reply.sources, LocalHealthBotFallback.generalSources);
+        expect(reply.sources, isEmpty);
         expect(controller.status, HealthBotStatus.idle);
       },
     );

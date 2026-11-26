@@ -166,23 +166,43 @@ void main() {
       HealthBotUnreachableException('Could not reach the Health-Bot service.'),
     ]) {
       test(
-        '${error.runtimeType}: clean offline guidance with an offline note',
+        '${error.runtimeType}: an honest "no answer" reply with Try again, '
+        'no generic paragraph and no note',
         () async {
           final c = await send(null, failWith: error);
-          expect(
-            c.transcript.last.text,
-            LocalHealthBotFallback.generalGuidance,
-          );
-          expect(c.transcript.last.note, HealthBotController.offlineNote);
+          expect(c.transcript.last.text, HealthBotController.noAnswerText);
+          expect(c.transcript.last.text, isNot(contains('withdrawal')));
+          expect(c.transcript.last.note, isNull);
+          expect(c.transcript.last.retryQuery, 'I have a headache');
           expect(c.transcript.last.answerSource, HealthBotAnswerSource.offline);
-          expect(c.transcript.last.text, isNot(contains('too long')));
-          expect(
-            c.transcript.last.sources,
-            LocalHealthBotFallback.generalSources,
-          );
+          expect(c.transcript.last.sources, isEmpty);
         },
       );
     }
+
+    test(
+      'a server error (e.g. the 503 clinical-review gate) never shows its text',
+      () async {
+        final c = await send(
+          null,
+          failWith: HealthBotClientException(
+            'Health guidance is awaiting clinical-advisor review.',
+          ),
+        );
+        expect(c.transcript.last.text, HealthBotController.noAnswerText);
+        expect(c.transcript.last.note, isNull);
+        expect(c.transcript.last.retryQuery, 'I have a headache');
+      },
+    );
+
+    test('a sign-in problem is the only reason shown under the reply', () async {
+      final c = await send(
+        null,
+        failWith: HealthBotAuthException('Please sign in to use the Health-Bot.'),
+      );
+      expect(c.transcript.last.note, 'Please sign in to use the Health-Bot.');
+      expect(c.transcript.last.retryQuery, isNull);
+    });
 
     test(
       'an emergency reply is unchanged: no note, no retry, no sources',

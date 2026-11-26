@@ -13,7 +13,6 @@ import 'package:quit_companion/features/auth/presentation/screens/widgets/social
 class LoginScreen extends StatefulWidget {
   final void Function(String userId, String email) onLoggedIn;
   final VoidCallback? onRegisterTap;
-  final VoidCallback? onPhoneSignInTap;
   final RecentEmailStore? recentEmailStore;
   final BiometricLockService biometricLockService;
 
@@ -21,7 +20,6 @@ class LoginScreen extends StatefulWidget {
     super.key,
     required this.onLoggedIn,
     this.onRegisterTap,
-    this.onPhoneSignInTap,
     this.recentEmailStore,
     this.biometricLockService = const UnavailableBiometricLockService(),
   });
@@ -441,16 +439,6 @@ class _LoginScreenState extends State<LoginScreen> {
           }
         },
       ),
-      if (widget.onPhoneSignInTap != null) ...[
-        const SizedBox(height: 16),
-        Center(
-          child: TextButton(
-            key: const Key('login_phone_sign_in_link'),
-            onPressed: _biometricLoginBusy ? null : widget.onPhoneSignInTap,
-            child: const Text('Or continue with Phone Number'),
-          ),
-        ),
-      ],
     ];
   }
 }

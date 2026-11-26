@@ -102,26 +102,46 @@ void main() {
       'a non-200 response throws HealthBotClientException with the backend detail',
       () async {
         final mockClient = MockClient(
-          (_) async => http.Response('{"detail":"Invalid token."}', 401),
+          (_) async => http.Response('{"detail":"Service busy."}', 503),
         );
         final client = HttpHealthBotClient(
           baseUrl: 'http://backend.test',
           httpClient: mockClient,
-          getIdToken: () async => 'expired',
+          getIdToken: () async => 'token',
         );
 
         expect(
           () => client.ask(query: 'hello'),
           throwsA(
-            isA<HealthBotClientException>().having(
-              (e) => e.message,
-              'message',
-              'Invalid token.',
-            ),
+            isA<HealthBotClientException>()
+                .having((e) => e.message, 'message', 'Service busy.')
+                .having((e) => e is HealthBotAuthException, 'is auth', false),
           ),
         );
       },
     );
+
+    test('a 401 becomes an actionable sign-in error', () async {
+      final mockClient = MockClient(
+        (_) async => http.Response('{"detail":"Invalid token."}', 401),
+      );
+      final client = HttpHealthBotClient(
+        baseUrl: 'http://backend.test',
+        httpClient: mockClient,
+        getIdToken: () async => 'expired',
+      );
+
+      expect(
+        () => client.ask(query: 'hello'),
+        throwsA(
+          isA<HealthBotAuthException>().having(
+            (e) => e.message,
+            'message',
+            'Your sign-in has expired. Please sign in again.',
+          ),
+        ),
+      );
+    });
 
     test(
       'a network failure surfaces as HealthBotClientException, not a raw exception',

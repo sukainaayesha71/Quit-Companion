@@ -40,6 +40,10 @@ class FirestoreCravingLogRepository
       'timestamp': log.timestamp.toIso8601String(),
       'relapseRiskScore': log.relapseRiskScore.name,
       'riskAssessmentPending': log.riskAssessmentPending,
+      // Same field the backend worker writes after re-scoring; omitted when
+      // unknown so a re-sent entry can't erase the worker's value.
+      if (log.assessmentSource != null)
+        'assessmentSource': log.assessmentSource,
       'recoveryContext': log.recoveryContext,
       'nicotineUsedSinceLastCheckin': log.nicotineUsedSinceLastCheckin,
       // Mood-slider ratings (Open Decision 6) — null-safe: older readers
@@ -94,6 +98,7 @@ class FirestoreCravingLogRepository
         (r) => r.name == data['relapseRiskScore'],
       ),
       riskAssessmentPending: data['riskAssessmentPending'] as bool? ?? false,
+      assessmentSource: data['assessmentSource'] as String?,
       recoveryContext:
           (data['recoveryContext'] as Map?)?.map(
             (k, v) => MapEntry(k as String, (v as num).toDouble()),

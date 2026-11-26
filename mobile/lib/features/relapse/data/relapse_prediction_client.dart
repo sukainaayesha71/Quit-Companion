@@ -34,6 +34,16 @@ extension PredictionSourceDisplay on PredictionSource {
     PredictionSource.ruleBasedFallback => 'Rule-based (ML unavailable)',
     PredictionSource.unknown => null,
   };
+
+  /// Value stored as a craving log's `assessmentSource` in Firestore — the
+  /// same strings the backend reports and its worker writes when it
+  /// re-scores a pending craving (backend/app/worker.py). Null when unknown.
+  String? get wireName => switch (this) {
+    PredictionSource.machineLearning => 'machine_learning',
+    PredictionSource.ruleBased => 'rule_based',
+    PredictionSource.ruleBasedFallback => 'rule_based_fallback',
+    PredictionSource.unknown => null,
+  };
 }
 
 /// A risk level plus how it was produced.

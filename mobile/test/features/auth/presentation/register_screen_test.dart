@@ -57,35 +57,8 @@ void main() {
     expect(loginTapped, isTrue);
   });
 
-  testWidgets('tapping the phone sign-in link invokes onPhoneSignInTap', (
-    tester,
-  ) async {
-    final controller = AuthController(FakeAuthRepository());
-    var tapped = false;
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AuthController>.value(
-        value: controller,
-        child: MaterialApp(
-          home: RegisterScreen(
-            onRegistered: (_, _, _) {},
-            onPhoneSignInTap: () => tapped = true,
-          ),
-        ),
-      ),
-    );
-
-    await tester.ensureVisible(
-      find.byKey(const Key('register_phone_sign_in_link')),
-    );
-    await tester.tap(find.byKey(const Key('register_phone_sign_in_link')));
-    await tester.pumpAndSettle();
-
-    expect(tapped, isTrue);
-  });
-
   testWidgets(
-    'the phone sign-in link is absent when onPhoneSignInTap is not provided',
+    'offers email/password and Google sign-up only, with no phone option',
     (tester) async {
       final controller = AuthController(FakeAuthRepository());
 
@@ -96,10 +69,12 @@ void main() {
         ),
       );
 
+      expect(find.byKey(const Key('register_google_button')), findsOneWidget);
       expect(
         find.byKey(const Key('register_phone_sign_in_link')),
         findsNothing,
       );
+      expect(find.textContaining('Phone'), findsNothing);
     },
   );
 
@@ -166,7 +141,7 @@ void main() {
   });
 
   testWidgets(
-    'shows Full Name, Email, Password, and Phone Number as a single unified form',
+    'shows Full Name, Email and Password as a single unified form, without a phone number',
     (tester) async {
       final controller = AuthController(FakeAuthRepository());
 
@@ -180,7 +155,7 @@ void main() {
       expect(find.byKey(const Key('register_name_field')), findsOneWidget);
       expect(find.byKey(const Key('register_email_field')), findsOneWidget);
       expect(find.byKey(const Key('register_password_field')), findsOneWidget);
-      expect(find.byKey(const Key('register_phone_field')), findsOneWidget);
+      expect(find.byKey(const Key('register_phone_field')), findsNothing);
     },
   );
 

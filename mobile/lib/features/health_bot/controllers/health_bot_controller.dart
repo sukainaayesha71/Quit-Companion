@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:quit_companion/features/health_bot/data/health_bot_chat_session_store.dart';
 import 'package:quit_companion/features/health_bot/data/health_bot_client.dart';
 import 'package:quit_companion/features/health_bot/data/health_bot_repository.dart';
 import 'package:quit_companion/features/health_bot/domain/local_health_bot_fallback.dart';
@@ -24,23 +25,42 @@ class HealthBotController extends ChangeNotifier {
   final String? Function()? currentDisplayName;
   final LocalHealthBotFallback _fallback;
 
+  /// Loads the user's quit details (product, strategy, days since quitting)
+  /// so replies can be personalised. Optional; failures are ignored.
+  final Future<HealthBotUserContext?> Function(String userId)? loadUserContext;
+
+  /// Where the start of the current chat (New Chat) is remembered.
+  final HealthBotChatSessionStore _chatSessions;
+
   HealthBotController(
     this._client,
     this._repository, {
     DateTime Function()? now,
     this.currentDisplayName,
+    this.loadUserContext,
+    HealthBotChatSessionStore? chatSessionStore,
     LocalHealthBotFallback fallback = const LocalHealthBotFallback(),
   }) : now = now ?? DateTime.now,
+       _chatSessions = chatSessionStore ?? InMemoryHealthBotChatSessionStore(),
        _fallback = fallback;
 
-  /// Shown under on-device guidance when the backend couldn't be reached.
-  static const offlineNote =
-      "Offline guidance — Health-Bot couldn't be reached.";
+  /// Conversation memory: how many earlier messages go with a question,
+  /// and how long each may be.
+  static const maxHistoryMessages = 10;
+  static const maxHistoryMessageChars = 1500;
 
-  /// Replaces a reply that had no real answer (curated fallback with no
-  /// matching topic); offered with "Try again".
-  static const noAnswerText =
-      "Sorry, I couldn't get an answer to that just now.";
+  /// The profile rarely changes mid-chat; reload it at most this often.
+  static const userContextMaxAge = Duration(minutes: 10);
+  static const userContextLoadTimeout = Duration(seconds: 2);
+
+  HealthBotUserContext? _userContext;
+  String? _userContextUserId;
+  DateTime? _userContextLoadedAt;
+
+  /// Replaces a reply that had no real answer (backend unreachable or
+  /// failed, or a curated fallback with no matching topic); offered with
+  /// "Try again".
+  static const noAnswerText = LocalHealthBotFallback.unavailableText;
 
   /// FR8 response time of the last reply (request start to answer), for
   /// diagnostics/measurement. Includes the local-fallback path.
@@ -58,6 +78,10 @@ class HealthBotController extends ChangeNotifier {
   void clearSession() {
     _historyRequest++;
     _historyUserId = null;
+    newChatStarted = false;
+    _userContext = null;
+    _userContextUserId = null;
+    _userContextLoadedAt = null;
     transcript.clear();
     disclaimerAcknowledged = false;
     errorMessage = null;
@@ -71,13 +95,21 @@ class HealthBotController extends ChangeNotifier {
     if (_historyUserId == userId) return;
     final request = ++_historyRequest;
     transcript.clear();
+    newChatStarted = false;
     isHistoryLoading = true;
     historyErrorMessage = null;
     notifyListeners();
     try {
+      final startedAtFuture = _safeChatStartedAt(userId);
       final conversations = await _repository.getConversations(userId);
+      final chatStartedAt = await startedAtFuture;
       if (request != _historyRequest) return;
       for (final item in conversations) {
+        // Only the current chat: anything from before the last New Chat
+        // stays saved but is neither shown nor sent as context.
+        if (chatStartedAt != null && item.timestamp.isBefore(chatStartedAt)) {
+          continue;
+        }
         transcript.addAll([
           HealthBotMessage(
             sender: HealthBotSender.user,
@@ -113,6 +145,51 @@ class HealthBotController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// New Chat is offered once there is something to start over from, and
+  /// never while a reply or the history is still loading (so a late reply
+  /// can't land in the new chat).
+  bool get canStartNewChat =>
+      status != HealthBotStatus.sending &&
+      !isHistoryLoading &&
+      (transcript.isNotEmpty || historyErrorMessage != null);
+
+  /// True from a New Chat until the first message in it, so the empty chat
+  /// can say that earlier messages are still saved.
+  bool newChatStarted = false;
+
+  /// Starts a completely fresh conversation: clears the visible chat and,
+  /// because follow-up context is built from it, the context sent with the
+  /// next question. Saved conversations are not deleted or changed; the
+  /// start time is remembered so they stay out of this chat after a
+  /// restart too.
+  Future<void> startNewChat(String userId) async {
+    if (status == HealthBotStatus.sending || isHistoryLoading) return;
+    final startedAt = now();
+    _historyRequest++;
+    _historyUserId = userId;
+    transcript.clear();
+    errorMessage = null;
+    historyErrorMessage = null;
+    lastResponseTime = null;
+    newChatStarted = true;
+    notifyListeners();
+    try {
+      await _chatSessions.saveChatStartedAt(userId, startedAt);
+    } catch (e) {
+      // The new chat still applies for this app session.
+      debugPrint('HealthBotController: could not save new chat start: $e');
+    }
+  }
+
+  Future<DateTime?> _safeChatStartedAt(String userId) async {
+    try {
+      return await _chatSessions.chatStartedAt(userId);
+    } catch (e) {
+      debugPrint('HealthBotController: chat start unavailable: $e');
+      return null;
+    }
+  }
+
   Future<void> sendQuery({required String userId, required String text}) async {
     final trimmed = text.trim();
     final sanitized = redactContactDetails(
@@ -125,9 +202,12 @@ class HealthBotController extends ChangeNotifier {
       return;
     }
     final request = _historyRequest;
+    // Built before this question joins the transcript.
+    final history = _recentHistory();
 
     final timestamp = now();
     errorMessage = null;
+    newChatStarted = false;
     transcript.add(
       HealthBotMessage(
         sender: HealthBotSender.user,
@@ -142,7 +222,13 @@ class HealthBotController extends ChangeNotifier {
     HealthBotAnswer answer;
     String? fallbackNote;
     try {
-      answer = await _client.ask(query: sanitized);
+      final userContext = await _userContextFor(userId);
+      if (request != _historyRequest) return;
+      answer = await _client.ask(
+        query: sanitized,
+        history: history,
+        userContext: userContext,
+      );
     } catch (e) {
       if (request != _historyRequest) return;
       debugPrint('HealthBotController.sendQuery failed: $e');
@@ -152,13 +238,10 @@ class HealthBotController extends ChangeNotifier {
           ? e.message
           : 'Could not reach the Health-Bot. Please try again.';
       answer = _fallback.answer(sanitized);
-      // Network trouble gets a plain offline note; an actionable reason
-      // (e.g. "Please sign in to use the Health-Bot.") is shown as is.
-      final isNetwork =
-          e is HealthBotTimeoutException ||
-          e is HealthBotUnreachableException ||
-          e is! HealthBotClientException;
-      fallbackNote = isNetwork ? offlineNote : errorMessage;
+      // Only a reason the user can act on (signing in again) is shown under
+      // the reply. Server status details (e.g. a 503 explanation) are not
+      // user-facing; the reply itself offers "Try again".
+      fallbackNote = e is HealthBotAuthException ? e.message : null;
     }
     stopwatch.stop();
     lastResponseTime = stopwatch.elapsed;
@@ -176,7 +259,10 @@ class HealthBotController extends ChangeNotifier {
     if (isEmergency) {
       // Emergency replies stay exactly as they are: no note, no retry.
     } else if (answer.isLocalFallback) {
-      note = fallbackNote ?? offlineNote;
+      botResponseText = noAnswerText;
+      note = fallbackNote;
+      // Retrying can't help until the user signs in again.
+      if (fallbackNote == null) retryQuery = trimmed;
     } else if (answer.source == HealthBotAnswerSource.curated &&
         answer.fallbackReason != null &&
         answer.type == HealthBotAnswerType.unmatched) {
@@ -217,6 +303,51 @@ class HealthBotController extends ChangeNotifier {
         answerSource: answerSource,
       ),
     );
+  }
+
+  /// The last [maxHistoryMessages] chat messages, oldest first, for
+  /// follow-up questions. User messages are redacted exactly like the
+  /// question itself; "no answer" placeholders are left out.
+  List<HealthBotTurn> _recentHistory() {
+    final displayName = currentDisplayName?.call();
+    final turns = <HealthBotTurn>[];
+    for (final message in transcript) {
+      final fromUser = message.sender == HealthBotSender.user;
+      if (!fromUser && message.text == noAnswerText) continue;
+      var text = fromUser
+          ? redactContactDetails(message.text, displayName: displayName)
+          : message.text;
+      text = text.trim();
+      if (text.isEmpty) continue;
+      if (text.length > maxHistoryMessageChars) {
+        text = text.substring(0, maxHistoryMessageChars);
+      }
+      turns.add(HealthBotTurn(fromUser: fromUser, text: text));
+    }
+    return turns.length <= maxHistoryMessages
+        ? turns
+        : turns.sublist(turns.length - maxHistoryMessages);
+  }
+
+  Future<HealthBotUserContext?> _userContextFor(String userId) async {
+    final loader = loadUserContext;
+    if (loader == null) return null;
+    final loadedAt = _userContextLoadedAt;
+    if (_userContextUserId == userId &&
+        loadedAt != null &&
+        now().difference(loadedAt) < userContextMaxAge) {
+      return _userContext;
+    }
+    try {
+      _userContext = await loader(userId).timeout(userContextLoadTimeout);
+    } catch (e) {
+      // Personalisation is optional: answer without it.
+      debugPrint('HealthBotController: user context unavailable: $e');
+      _userContext = null;
+    }
+    _userContextUserId = userId;
+    _userContextLoadedAt = now();
+    return _userContext;
   }
 
   Future<void> _logConversation({

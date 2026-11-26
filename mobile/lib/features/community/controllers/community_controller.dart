@@ -63,7 +63,16 @@ class CommunityController extends ChangeNotifier {
   StreamSubscription<List<CommunityPost>>? _feedSubscription;
   StreamSubscription<List<CommunityReply>>? _replySubscription;
   int _feedVersion = 0;
+  int _likeStateRequest = 0;
 
+  static const feedErrorMessage =
+      'Could not load community posts. Check your connection and try again.';
+
+  /// Live feed. Posts are shown as soon as they arrive; whether the user
+  /// liked each one is looked up separately ([_refreshLikedState]), so a
+  /// slow or failed lookup can never leave the screen stuck on a spinner.
+  /// An error before any posts arrived shows the error state (with Retry);
+  /// after that, the posts already on screen stay visible.
   Future<void> startFeed({
     required String userId,
     PostCategory? category,
@@ -74,38 +83,51 @@ class CommunityController extends ChangeNotifier {
     status = CommunityStatus.loading;
     errorMessage = null;
     notifyListeners();
-    var event = 0;
     _feedSubscription = _repository
         .watchPosts(category: category)
         .listen(
-          (items) async {
-            final currentEvent = ++event;
-            try {
-              final liked = await Future.wait(
-                items.map(
-                  (p) => _repository.hasLiked(postId: p.postId, userId: userId),
-                ),
-              );
-              if (version != _feedVersion || currentEvent != event) return;
-              posts = items;
-              likedPostIds = {
-                for (var i = 0; i < items.length; i++)
-                  if (liked[i]) items[i].postId,
-              };
-              status = CommunityStatus.loaded;
-              notifyListeners();
-            } catch (_) {
-              if (version != _feedVersion) return;
-              errorMessage = 'Live updates are unavailable. Refresh to retry.';
-              notifyListeners();
-            }
+          (items) {
+            if (version != _feedVersion) return;
+            posts = items;
+            status = CommunityStatus.loaded;
+            errorMessage = null;
+            notifyListeners();
+            unawaited(_refreshLikedState(version, userId, items));
           },
           onError: (Object error) {
             if (version != _feedVersion) return;
-            errorMessage = 'Live updates are unavailable. Refresh to retry.';
+            debugPrint('CommunityController feed failed: $error');
+            errorMessage = feedErrorMessage;
+            if (status != CommunityStatus.loaded) {
+              status = CommunityStatus.error;
+            }
             notifyListeners();
           },
         );
+  }
+
+  Future<void> _refreshLikedState(
+    int version,
+    String userId,
+    List<CommunityPost> items,
+  ) async {
+    final request = ++_likeStateRequest;
+    final liked = <String>{};
+    await Future.wait(
+      items.map((post) async {
+        try {
+          if (await _repository.hasLiked(postId: post.postId, userId: userId)) {
+            liked.add(post.postId);
+          }
+        } catch (e) {
+          // Non-fatal: the post still shows, just without the liked marker.
+          debugPrint('Could not check the like on ${post.postId}: $e');
+        }
+      }),
+    );
+    if (version != _feedVersion || request != _likeStateRequest) return;
+    likedPostIds = liked;
+    notifyListeners();
   }
 
   void stopFeed() {

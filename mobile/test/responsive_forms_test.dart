@@ -4,17 +4,13 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:quit_companion/core/theme/app_theme.dart';
 import 'package:quit_companion/features/auth/controllers/auth_controller.dart';
-import 'package:quit_companion/features/auth/controllers/phone_auth_controller.dart';
 import 'package:quit_companion/features/auth/data/fake_auth_repository.dart';
-import 'package:quit_companion/features/auth/data/fake_phone_auth_repository.dart';
 import 'package:quit_companion/features/onboarding/controllers/onboarding_controller.dart';
 import 'package:quit_companion/features/onboarding/domain/quit_date_calculator.dart';
 import 'package:quit_companion/features/profile/data/fake_user_repository.dart';
 import 'package:quit_companion/features/onboarding/models/product_type.dart';
 import 'package:quit_companion/features/auth/presentation/screens/login_screen.dart';
 import 'package:quit_companion/features/auth/presentation/screens/register_screen.dart';
-import 'package:quit_companion/features/auth/presentation/screens/phone_sign_in_screen.dart';
-import 'package:quit_companion/features/auth/presentation/screens/otp_verification_screen.dart';
 import 'package:quit_companion/features/onboarding/presentation/screens/gender_selection_screen.dart';
 import 'package:quit_companion/features/onboarding/presentation/screens/product_selection_screen.dart';
 import 'package:quit_companion/features/onboarding/presentation/screens/product_quantity_screen.dart';
@@ -31,8 +27,6 @@ void main() {
     for (final scenario in [
       'login',
       'register',
-      'phone',
-      'otp',
       'gender',
       'product',
       'quantity',
@@ -45,8 +39,6 @@ void main() {
       'words',
       'keyboard_login',
       'keyboard_register',
-      'keyboard_phone',
-      'keyboard_otp',
       'keyboard_quantity',
     ]) {
       final keyboard = scenario.startsWith('keyboard_');
@@ -67,7 +59,6 @@ void main() {
           originalErrorHandler?.call(details);
         };
         addTearDown(() => FlutterError.onError = originalErrorHandler);
-        final phone = PhoneAuthController(FakePhoneAuthRepository());
         final onboarding = OnboardingController(
           FakeUserRepository(),
           QuitDateCalculator(),
@@ -76,16 +67,6 @@ void main() {
         final screen = switch (name) {
           'login' => LoginScreen(onLoggedIn: (_, _) {}),
           'register' => RegisterScreen(onRegistered: (_, _, _) {}),
-          'phone' => PhoneSignInScreen(
-            controller: phone,
-            onOtpSent: (_) {},
-            onBack: () {},
-          ),
-          'otp' => OtpVerificationScreen(
-            phoneNumber: '+923001234567',
-            phoneAuthController: phone,
-            onVerified: (_) {},
-          ),
           'gender' => GenderSelectionScreen(onBack: () {}, onContinue: (_) {}),
           'product' => ProductSelectionScreen(
             onBack: () {},
@@ -147,7 +128,6 @@ void main() {
         }
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
-        phone.dispose();
         onboarding.dispose();
       });
     }

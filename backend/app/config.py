@@ -26,9 +26,12 @@ class Settings(BaseSettings):
     # Never expose these values through the mobile app or a client response.
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
-    # FR8 2-second response target: total budget for one Gemini call before
-    # the curated fallback is returned instead.
-    healthbot_gemini_timeout_seconds: float = 1.5
+    # Total budget for one Gemini reply (including one retry) before the
+    # curated fallback is returned instead. Measured 2026-11-26: Gemini takes
+    # 1-3.6 s even for a 2-token reply and 2-9 s for a full conversational
+    # answer, so the original FR8 1.5 s budget made almost every reply fall
+    # back to fixed text.
+    healthbot_gemini_timeout_seconds: float = 10.0
     clinical_review_record: str | None = None
     require_clinical_review: bool = False
     worker_poll_seconds: int = 30
